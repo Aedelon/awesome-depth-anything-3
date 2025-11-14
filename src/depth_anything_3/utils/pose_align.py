@@ -16,7 +16,6 @@ from typing import List
 import numpy as np
 import torch
 from evo.core.trajectory import PosePath3D
-from numpy import math
 
 from depth_anything_3.utils.geometry import affine_inverse, affine_inverse_np
 
@@ -284,10 +283,10 @@ def _rand_rot():
     u1, u2, u3 = np.random.rand(3)
     q = np.array(
         [
-            np.sqrt(1 - u1) * np.sin(2 * math.pi * u2),
-            np.sqrt(1 - u1) * np.cos(2 * math.pi * u2),
-            np.sqrt(u1) * np.sin(2 * math.pi * u3),
-            np.sqrt(u1) * np.cos(2 * math.pi * u3),
+            np.sqrt(1 - u1) * np.sin(2 * np.math.pi * u2),
+            np.sqrt(1 - u1) * np.cos(2 * np.math.pi * u2),
+            np.sqrt(u1) * np.sin(2 * np.math.pi * u3),
+            np.sqrt(u1) * np.cos(2 * np.math.pi * u3),
         ]
     )
     w, x, y, z = q

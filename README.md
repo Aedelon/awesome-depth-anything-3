@@ -79,6 +79,7 @@ We introduce a new benchmark to rigorously evaluate geometry prediction models o
 ### 📦 Installation
 
 ```bash
+pip install torch\>=2 torchvision
 pip install -e . # Basic
 pip install -e ".[gs]" # Gaussians Estimation and Rendering
 pip install -e ".[app]" # Gradio, python>=3.10
@@ -213,6 +214,11 @@ Generally, you should observe that DA3-LARGE achieves comparable results to VGGT
 |                               |           |               |              |               |               |       |           |                |
 | **Monocular Depth** | | | | | | | | |
 | [DA3MONO-LARGE](https://huggingface.co/depth-anything/DA3MONO-LARGE)                | 0.35B     | ✅             |              |               |               |       | ✅         | Apache 2.0     |
+
+
+## ❓ FAQ
+
+- **Older GPUs without XFormers support**: See [Issue #11](https://github.com/ByteDance-Seed/Depth-Anything-3/issues/11). Thanks to [@S-Mahoney](https://github.com/S-Mahoney) for the solution!
 
 
 ## 📝 Citations
