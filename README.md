@@ -32,6 +32,9 @@ All models are trained exclusively on **public academic datasets**.
   <img src="assets/images/da3_teaser.png" alt="Depth Anything 3" width="100%">
 </p> -->
 <p align="center">
+  <img src="assets/images/demo320-2.gif" alt="Depth Anything 3 - Left" width="70%">
+</p>
+<p align="center">
   <img src="assets/images/da3_radar.png" alt="Depth Anything 3" width="100%">
 </p>
 
