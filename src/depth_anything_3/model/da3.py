@@ -182,7 +182,8 @@ class DepthAnything3Net(nn.Module):
         assert output.get("depth", None) is not None, "must provide MV depth for the GS head."
 
         # The depth is defined in the DA3 model's camera space,
-        # so even with provided GT camera poses, we instead use the predicted camera poses for better alignment.
+        # so even with provided GT camera poses,
+        # we instead use the predicted camera poses for better alignment.
         ctx_extr = output.get("extrinsics", None)
         ctx_intr = output.get("intrinsics", None)
         assert (

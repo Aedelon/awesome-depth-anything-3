@@ -97,8 +97,8 @@ class GaussianAdapter(nn.Module):
             pose_scales = torch.clamp(pose_scales, min=1 / 3.0, max=3.0)
             cam2worlds[:, :, :3, 3] = cam2worlds[:, :, :3, 3] * rearrange(
                 pose_scales, "b -> b () ()"
-            ) # [b, i, j]
-            gs_depths = gs_depths * rearrange(pose_scales, "b -> b () () ()") # [b, v, h, w]
+            )  # [b, i, j]
+            gs_depths = gs_depths * rearrange(pose_scales, "b -> b () () ()")  # [b, v, h, w]
         # 1.3) casting xy in image space
         xy_ray, _ = sample_image_grid((H, W), device)
         xy_ray = xy_ray[None, None, ...].expand(b, v, -1, -1, -1)  # b v h w xy

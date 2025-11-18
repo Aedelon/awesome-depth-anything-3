@@ -272,20 +272,27 @@ These parameters are passed directly to the `inference()` method and only apply 
 - **Type**: `int`
 - **Description**: Frame rate for the output video when visualizing features across multiple images.
 
-#### `export_kwargs` (default: `{}`)
-- **Type**: `dict[str, Any]`
-- **Description**: Additional keyword arguments passed to specific export functions. Different export formats accept different parameters.
-- **Example**:
-  ```python
-  export_kwargs = {
-      "trj_mode": "interpolate_smooth",  # For gs_video
-      "gs_views_interval": 1,            # For gs_ply
-      "conf_thresh_percentile": 30.0,    # For glb
-      "num_max_points": 500000,          # For glb
-      "show_cameras": True,              # For glb
-      "fps": 15                          # For feat_vis
-  }
-  ```
+#### ✨🎥 3DGS and 3DGS Video Parameters
+
+These parameters are passed directly to the `inference()` method and only apply when `export_format` includes `"gs_ply"` or `"gs_video"`.
+
+##### `export_kwargs` (default: `{}`)
+- Type: `dict[str, dict[str, Any]]`
+- Description: Per-format extra arguments passed to export functions, mainly for `"gs_ply"` and `"gs_video"`.
+  - Access pattern: `export_kwargs[export_format][key] = value`
+  - Example:
+    ```python
+    {
+        "gs_ply": {
+            "gs_views_interval": 1,
+        },
+        "gs_video": {
+            "trj_mode": "interpolate_smooth",
+            "chunk_size": 1,
+            "vis_depth": None,
+        },
+    }
+    ```
 
 ## 📤 Export Formats
 

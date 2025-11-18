@@ -33,7 +33,12 @@ from depth_anything_3.services.input_handlers import (
     VideoHandler,
     parse_export_feat,
 )
-from depth_anything_3.utils.constants import DEFAULT_EXPORT_DIR, DEFAULT_GALLERY_DIR, DEFAULT_GRADIO_DIR, DEFAULT_MODEL
+from depth_anything_3.utils.constants import (
+    DEFAULT_EXPORT_DIR,
+    DEFAULT_GALLERY_DIR,
+    DEFAULT_GRADIO_DIR,
+    DEFAULT_MODEL,
+)
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
@@ -623,9 +628,9 @@ def backend(
 
 @app.command()
 def gradio(
-    model_dir: str = typer.Option(DEFAULT_MODEL,help="Model directory path"),
-    workspace_dir: str = typer.Option(DEFAULT_GRADIO_DIR,help="Workspace directory path"),
-    gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR,help="Gallery directory path"),
+    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+    workspace_dir: str = typer.Option(DEFAULT_GRADIO_DIR, help="Workspace directory path"),
+    gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery directory path"),
     host: str = typer.Option("127.0.0.1", help="Host address to bind to"),
     port: int = typer.Option(7860, help="Port number to bind to"),
     share: bool = typer.Option(False, help="Create a public link for the app"),
