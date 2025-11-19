@@ -24,7 +24,7 @@ dependencies = [
     "xformers",
     "open3d",
     "fastapi",
-    "unicorn",
+    "uvicorn",
     "requests",
     "typer",
     "pillow",
