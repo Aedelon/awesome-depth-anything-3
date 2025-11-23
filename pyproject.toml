@@ -1,13 +1,13 @@
 [build-system]
-requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "depth-anything-3"
 version = "0.0.0"
 description = "Depth Anything 3"
 readme = "README.md"
-requires-python = ">=3.9, <=3.13"
+requires-python = ">=3.10, <=3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Your Name" }]
 
@@ -21,7 +21,6 @@ dependencies = [
     "imageio",
     "numpy<2",
     "opencv-python",
-    "xformers",
     "open3d",
     "fastapi",
     "uvicorn",
@@ -39,12 +38,13 @@ dependencies = [
     "moviepy==1.0.3",
     "typer>=0.9.0",
     "pycolmap",
+    "xformers; platform_system != 'Darwin'",
 ]
 
 [project.optional-dependencies]
 app = ["gradio>=5", "pillow>=9.0"] # requires that python3>=3.10
-gs = ["gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70"]
-all = ["depth-anything-3[app,gs]"]
+# Note: gsplat is installed via setup.py post-install hook (requires torch to be installed first)
+all = ["depth-anything-3[app]"]
 
 
 [project.scripts]
@@ -53,18 +53,11 @@ da3 = "depth_anything_3.cli:app"
 [project.urls]
 Homepage = "https://github.com/ByteDance-Seed/Depth-Anything-3"
 
-[tool.hatch.version]
-source = "vcs"
+[tool.setuptools]
+package-dir = {"" = "src"}
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/depth_anything_3"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-  "/README.md",
-  "/pyproject.toml",
-  "/src/depth_anything_3",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
