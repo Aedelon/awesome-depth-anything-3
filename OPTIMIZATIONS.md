@@ -41,6 +41,7 @@ The model will automatically:
 - ✅ Use MPS (Metal) on macOS
 - ✅ Disable `torch.compile()` on MPS/CPU (better performance)
 - ✅ Enable `torch.compile()` on CUDA (30-50% speedup)
+- ✅ Use optimized attention (2-3x faster on MPS)
 - ✅ Use channels_last memory format on GPU
 - ✅ Use mixed precision (bfloat16/float16)
 
@@ -55,6 +56,7 @@ The model will automatically:
 | torch.compile() | ⚠️ Auto-disabled | Slower on MPS, auto-disabled for better performance |
 | channels_last | ✅ Supported | Enabled automatically |
 | Mixed precision | ✅ Supported | float16 on MPS |
+| Optimized attention | ✅ Enabled | Manual implementation 2-3x faster than PyTorch's |
 
 **Performance:** ~13-28 images/sec on M-series chips (depends on batch size)
 
@@ -141,7 +143,65 @@ with torch.autocast(device_type=device.type, dtype=autocast_dtype):
 - 50% less memory usage
 - Minimal accuracy impact
 
-### 5. Scalar Output Capture
+**Note MPS (Apple Silicon):**
+- Autocast is fp16-only; bf16 is not reliably supported by PyTorch MPS and will raise errors.
+- fp16 = meilleur compromis perf/mémoire ; fp32 = mode sûr si un op échoue en fp16.
+- Si `mixed_precision="bfloat16"` est demandé sur MPS, le code bascule automatiquement en fp16.
+- Flag de secours: `force_fp32_on_mps=True` désactive l’autocast sur MPS si un op casse en fp16.
+
+### 5. Optimized Attention for MPS
+
+PyTorch's `scaled_dot_product_attention` has poor MPS optimization. We implemented a centralized attention module that automatically selects the optimal backend:
+
+**Module:** `src/depth_anything_3/model/optimized_attention.py`
+
+```python
+from depth_anything_3.model.optimized_attention import scaled_dot_product_attention_optimized
+
+# Automatically uses:
+# - Manual implementation on MPS (2-3x faster)
+# - PyTorch's F.scaled_dot_product_attention on CUDA/CPU (optimized)
+x = scaled_dot_product_attention_optimized(q, k, v, attn_mask, dropout_p, scale, training)
+```
+
+**Implementation details:**
+- `should_use_manual_attention(device)` - Returns True for MPS devices
+- `_manual_scaled_dot_product_attention()` - Manual attention for MPS
+- Both Attention classes import and use this centralized module (no code duplication)
+
+**Benefits:**
+- 2-3x faster attention on MPS vs PyTorch's implementation
+- Automatic backend selection
+- Single source of truth (no code duplication)
+
+### 6. Tensor Core acceleration (CUDA)
+
+On Ampere+ GPUs, TF32 tensor cores are enabled automatically:
+
+- `torch.backends.cuda.matmul.allow_tf32 = True`
+- `torch.backends.cudnn.allow_tf32 = True`
+- `torch.set_float32_matmul_precision("high")`
+
+This keeps FP32 numerics while unlocking tensor-core throughput (often +10–20%).
+
+### 7. Faster host-to-device copies on CUDA
+
+CPU tensors (images, intrinsics, extrinsics) are pinned before asynchronous transfers:
+
+```python
+if device.type == "cuda" and imgs_cpu.device.type == "cpu":
+    imgs_cpu = imgs_cpu.pin_memory()
+    extrinsics = extrinsics.pin_memory()
+    intrinsics = intrinsics.pin_memory()
+```
+
+Pinned buffers make `non_blocking=True` effective, reducing H2D latency when batching frames.
+
+### 8. Sub-batching to limit memory
+
+`DepthAnything3(batch_size=N)` traite les images par sous-lots de N pour éviter les OOM sur GPU/MPS/CPU. Les sorties sont concaténées dans l'ordre d'entrée (profondeur, conf, intrinsics/extrinsics, etc.).
+
+### 9. Scalar Output Capture
 
 Reduces graph breaks in torch.compile():
 
@@ -364,8 +424,9 @@ uv run benchmark_performance.py --compare
 - ✅ Added MPS (Metal) support for macOS
 - ✅ Made xformers platform-specific (excluded on macOS)
 - ✅ Implemented intelligent torch.compile() auto-detection
+- ✅ Added optimized attention for MPS (2-3x speedup)
 - ✅ Added channels_last memory format optimization
-- ✅ Added mixed precision inference
+- ✅ Added configurable mixed precision inference
 - ✅ Created comprehensive benchmarking tool
 - ✅ Fixed Python version constraints for compatibility
 
