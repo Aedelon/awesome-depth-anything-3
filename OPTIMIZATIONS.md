@@ -241,6 +241,29 @@ model = DepthAnything3(
     model_name="da3-small",
     enable_compile=False
 )
+
+# Control mixed precision
+model = DepthAnything3(
+    model_name="da3-small",
+    mixed_precision=False  # Disable (use float32)
+)
+
+model = DepthAnything3(
+    model_name="da3-small",
+    mixed_precision="bfloat16"  # Force bfloat16
+)
+
+model = DepthAnything3(
+    model_name="da3-small",
+    mixed_precision="float16"  # Force float16
+)
+
+# Full control over all optimizations
+model = DepthAnything3(
+    model_name="da3-small",
+    enable_compile=False,
+    mixed_precision=False,  # Full precision for maximum accuracy
+)
 ```
 
 ### Compilation Modes
@@ -250,6 +273,22 @@ model = DepthAnything3(
 | `default` | Balanced compilation | General use |
 | `reduce-overhead` | Minimize Python overhead | Inference (recommended) |
 | `max-autotune` | Maximum optimization | CUDA only, long warmup |
+
+### Mixed Precision Modes
+
+| Mode | Description | Memory Savings | Speed | Accuracy |
+|------|-------------|----------------|-------|----------|
+| `None` (auto) | Auto-detect optimal dtype | ~50% | ~2x | Minimal loss |
+| `True` | Enable with auto-detection | ~50% | ~2x | Minimal loss |
+| `False` | Disable (float32) | 0% | 1x | Best |
+| `"bfloat16"` | Force bfloat16 | ~50% | ~2x | Better than float16 |
+| `"float16"` | Force float16 | ~50% | ~2x | Good |
+
+**Recommendations:**
+- **For maximum accuracy:** `mixed_precision=False`
+- **For balanced performance:** `mixed_precision=None` (default, auto-detect)
+- **For CUDA with stability:** `mixed_precision="bfloat16"`
+- **For MPS/older GPUs:** `mixed_precision="float16"`
 
 ### Batch Size Configuration (Future)
 

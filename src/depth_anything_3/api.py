@@ -95,6 +95,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         enable_compile: bool | None = None,
         compile_mode: str = "reduce-overhead",
         batch_size: int | None = None,
+        mixed_precision: bool | str | None = None,
         **kwargs
     ):
         """
@@ -113,12 +114,20 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
                      - "max-autotune": Maximum performance tuning (slower compilation, CUDA only)
         batch_size: Batch size for processing images (default: None = process all at once).
                    Lower values reduce memory usage but may increase processing time.
+        mixed_precision: Mixed precision mode (default: None = auto-detect).
+                        Options:
+                        - None: Auto-detect (bfloat16 on CUDA if supported, float16 otherwise)
+                        - True: Enable with auto-detection
+                        - False: Disable (use float32)
+                        - "bfloat16": Force bfloat16
+                        - "float16": Force float16
         **kwargs: Additional keyword arguments (currently unused).
         """
         super().__init__()
         self.model_name = model_name
         self.compile_mode = compile_mode
         self.batch_size = batch_size
+        self.mixed_precision = mixed_precision
 
         # Auto-detect optimal compile setting based on device
         if enable_compile is None:
@@ -173,10 +182,14 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         Returns:
             Dictionary containing model predictions
         """
-        # Determine optimal autocast dtype
-        autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        # Determine mixed precision settings
+        use_autocast, autocast_dtype = self._get_autocast_settings(image.device)
+
         with torch.no_grad():
-            with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+            if use_autocast:
+                with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+                    return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
+            else:
                 return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
 
     def inference(
@@ -465,6 +478,45 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         export(prediction, export_format, export_dir, **kwargs)
         end_time = time.time()
         logger.info(f"Export Results Done. Time: {end_time - start_time} seconds")
+
+    def _get_autocast_settings(self, device: torch.device) -> tuple[bool, torch.dtype | None]:
+        """
+        Determine autocast settings based on mixed_precision configuration.
+
+        Args:
+            device: The device where the model is running
+
+        Returns:
+            Tuple of (use_autocast, dtype)
+        """
+        # If mixed precision is explicitly disabled
+        if self.mixed_precision is False:
+            return False, None
+
+        # If mixed precision is explicitly set to a dtype string
+        if isinstance(self.mixed_precision, str):
+            dtype_map = {
+                "bfloat16": torch.bfloat16,
+                "float16": torch.float16,
+            }
+            if self.mixed_precision in dtype_map:
+                return True, dtype_map[self.mixed_precision]
+            else:
+                logger.warning(f"Unknown mixed precision dtype: {self.mixed_precision}, using auto-detect")
+
+        # Auto-detect (default behavior when mixed_precision is None or True)
+        if device.type == "cuda":
+            # Use bfloat16 on CUDA if supported, otherwise float16
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            return True, dtype
+        elif device.type == "mps":
+            # MPS supports float16
+            return True, torch.float16
+        else:
+            # CPU: optionally use float16 if explicitly enabled
+            if self.mixed_precision is True:
+                return True, torch.float16
+            return False, None
 
     def to(self, *args, **kwargs):
         """
