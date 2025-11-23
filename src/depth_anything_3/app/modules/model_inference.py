@@ -196,7 +196,10 @@ class ModelInference:
         print(f"Running inference with method: {actual_method}")
         with torch.no_grad():
             prediction = self.model.inference(
-                image_paths, export_dir=None, process_res_method=actual_method, infer_gs=infer_gs
+                image_paths,
+                export_dir=None,
+                process_res_method=actual_method,
+                infer_gs=infer_gs,
             )
         # num_max_points: int = 1_000_000,
         export_to_glb(
