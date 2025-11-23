@@ -61,6 +61,12 @@ This fork includes **platform-specific optimizations** for improved performance 
 
 **📊 Performance on macOS M-series:** ~13-28 images/sec (vs baseline with compilation overhead)
 
+**CLI / Backend / Gradio flags exposés**
+- `batch_size` : sous-lotissement pour limiter la RAM (CLI, backend, Gradio).
+- `mixed_precision` : `auto|fp16|fp32|bf16` (MPS: fp32 par défaut, fp16 opt-in).
+- `force_fp32_on_mps` : kill-switch fp32 sur Mac même si fp16 demandé.
+Gradio ajoute des contrôles correspondants dans la section Inference.
+
 **📖 See [OPTIMIZATIONS.md](OPTIMIZATIONS.md) for detailed documentation, benchmarks, and usage guide.**
 
 ## ✨ Highlights
