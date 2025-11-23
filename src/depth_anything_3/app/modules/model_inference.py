@@ -93,9 +93,13 @@ class ModelInference:
         """
         print(f"Processing images from {target_dir}")
 
-        # Device check
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        device = torch.device(device)
+        # Device check: prioritize CUDA > MPS > CPU
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
 
         # Initialize model if needed
         self.initialize_model(device)
