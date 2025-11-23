@@ -575,8 +575,10 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
             return True, dtype
         elif device.type == "mps":
-            # MPS supports float16
-            return True, torch.float16
+            # Default to fp32 on MPS; allow opt-in fp16 when explicitly requested
+            if self.mixed_precision is True:
+                return True, torch.float16
+            return False, None
         else:
             # CPU: optionally use float16 if explicitly enabled
             if self.mixed_precision is True:

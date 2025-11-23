@@ -54,6 +54,9 @@ class InferenceRequest(BaseModel):
     process_res_method: str = "upper_bound_resize"
     export_feat_layers: List[int] = []
     align_to_input_ext_scale: bool = True
+    batch_size: Optional[int] = None
+    mixed_precision: Optional[str] = "auto"  # auto|fp16|fp32|bf16
+    force_fp32_on_mps: bool = False
     # GLB export parameters
     conf_thresh_percentile: float = 40.0
     num_max_points: int = 1_000_000
@@ -105,6 +108,12 @@ class ModelBackend:
         self.load_start_time = None  # Time when model loading started
         self.load_completed_time = None  # Time when model loading completed
         self.last_used = None
+        # Track defaults used for currently loaded model to detect mismatches
+        self.request_defaults: Dict[str, Any] = {
+            "batch_size": None,
+            "mixed_precision": None,
+            "force_fp32_on_mps": False,
+        }
 
     def load_model(self):
         """Load model if not already loaded."""
@@ -117,7 +126,12 @@ class ModelBackend:
             self.load_start_time = time.time()
             start_time = time.time()
 
-            self.model = DepthAnything3.from_pretrained(self.model_dir).to(self.device)
+            self.model = DepthAnything3.from_pretrained(
+                self.model_dir,
+                batch_size=self.request_defaults.get("batch_size"),
+                mixed_precision=self.request_defaults.get("mixed_precision"),
+                force_fp32_on_mps=self.request_defaults.get("force_fp32_on_mps", False),
+            ).to(self.device)
             self.model.eval()
 
             self.model_loaded = True

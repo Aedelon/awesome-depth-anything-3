@@ -17,6 +17,8 @@
 
 </div>
 
+This repository is an **optimized fork** of Depth Anything 3 focused on macOS/MPS and CUDA throughput (channels_last, mixed precision policies, torch.compile heuristics, sub-batching, TF32). Upstream paper and models remain unchanged; see [OPTIMIZATIONS.md](OPTIMIZATIONS.md) for the delta.
+
 This work presents **Depth Anything 3 (DA3)**, a model that predicts spatially consistent geometry from
 arbitrary visual inputs, with or without known camera poses.
 In pursuit of minimal modeling, DA3 yields two key insights:
@@ -42,7 +44,7 @@ All models are trained exclusively on **public academic datasets**.
 ## 📰 News
 - **2025-11-14:** 🎉 Paper, project page, code and models are all released.
 
-## 🚀 Performance Optimizations
+## 🚀 Performance Optimizations (fork)
 
 This fork includes **platform-specific optimizations** for improved performance on macOS and other platforms:
 
@@ -51,6 +53,11 @@ This fork includes **platform-specific optimizations** for improved performance 
 - ✅ **Platform-Specific Dependencies**: xformers automatically excluded on macOS
 - ✅ **Memory Optimizations**: channels_last format and mixed precision inference
 - ✅ **Comprehensive Benchmarking**: Tools to measure and compare performance
+
+**Defaults in this fork (Nov 2025):**
+- MPS: fp32 par défaut (autocast off) pour la stabilité ; fp16 opt-in via `mixed_precision=True/"float16"`.
+- CUDA: torch.compile on, TF32 on, channels_last + pinned memory.
+- Sub-batching: `batch_size` pour limiter la RAM unifiée/GPU.
 
 **📊 Performance on macOS M-series:** ~13-28 images/sec (vs baseline with compilation overhead)
 
