@@ -39,20 +39,46 @@ class ModelInference:
     def __init__(self):
         """Initialize the model inference handler."""
         self.model = None
+        self.model_opts: Dict[str, Any] = {
+            "batch_size": None,
+            "mixed_precision": None,
+            "force_fp32_on_mps": False,
+        }
 
-    def initialize_model(self, device: str = "cuda") -> None:
+    def initialize_model(
+        self,
+        device: str = "cuda",
+        *,
+        batch_size: Optional[int] = None,
+        mixed_precision: Optional[str] = "auto",
+        force_fp32_on_mps: bool = False,
+    ) -> None:
         """
         Initialize the DepthAnything3 model.
 
         Args:
             device: Device to load the model on
         """
-        if self.model is None:
+        desired_opts = {
+            "batch_size": batch_size,
+            "mixed_precision": None if mixed_precision == "auto" else mixed_precision,
+            "force_fp32_on_mps": force_fp32_on_mps,
+        }
+
+        should_reload = (self.model is None) or (desired_opts != self.model_opts)
+
+        if should_reload:
             # Get model directory from environment variable or use default
             model_dir = os.environ.get(
                 "DA3_MODEL_DIR", "/dev/shm/da3_models/DA3HF-VITG-METRIC_VITL"
             )
-            self.model = DepthAnything3.from_pretrained(model_dir)
+            self.model = DepthAnything3.from_pretrained(
+                model_dir,
+                batch_size=desired_opts["batch_size"],
+                mixed_precision=desired_opts["mixed_precision"],
+                force_fp32_on_mps=desired_opts["force_fp32_on_mps"],
+            )
+            self.model_opts = desired_opts
             self.model = self.model.to(device)
         else:
             self.model = self.model.to(device)
@@ -65,6 +91,9 @@ class ModelInference:
         filter_black_bg: bool = False,
         filter_white_bg: bool = False,
         process_res_method: str = "upper_bound_resize",
+        batch_size: Optional[int] = None,
+        mixed_precision: str = "auto",
+        force_fp32_on_mps: bool = False,
         show_camera: bool = True,
         selected_first_frame: Optional[str] = None,
         save_percentage: float = 30.0,
@@ -102,7 +131,12 @@ class ModelInference:
             device = torch.device("cpu")
 
         # Initialize model if needed
-        self.initialize_model(device)
+        self.initialize_model(
+            device,
+            batch_size=batch_size,
+            mixed_precision=mixed_precision,
+            force_fp32_on_mps=force_fp32_on_mps,
+        )
 
         # Get image paths
         print("Loading images...")
