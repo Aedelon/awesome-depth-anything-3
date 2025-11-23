@@ -49,11 +49,14 @@ def test_optimizations():
         model = model.to(device)
         print(f"✓ Model moved to {device}")
 
-        # Create dummy input to test forward pass
-        dummy_input = torch.randn(1, 2, 3, 224, 224).to(device)
+        # Create dummy input to test channels_last format (needs 4D tensor)
+        dummy_input = torch.randn(1, 3, 224, 224).to(device)
         if device in ('cuda', 'mps'):
             dummy_input = dummy_input.to(memory_format=torch.channels_last)
             print("✓ Input converted to channels_last format")
+            # Verify memory format
+            is_channels_last = dummy_input.is_contiguous(memory_format=torch.channels_last)
+            print(f"  - Is channels_last: {is_channels_last}")
 
         print("\nModel structure check:")
         print(f"  - Model type: {type(model.model)}")

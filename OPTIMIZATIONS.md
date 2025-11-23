@@ -144,10 +144,26 @@ with torch.autocast(device_type=device.type, dtype=autocast_dtype):
 - Minimal accuracy impact
 
 **Note MPS (Apple Silicon):**
-- Autocast is fp16-only; bf16 is not reliably supported by PyTorch MPS and will raise errors.
-- fp16 = meilleur compromis perf/mémoire ; fp32 = mode sûr si un op échoue en fp16.
-- Si `mixed_precision="bfloat16"` est demandé sur MPS, le code bascule automatiquement en fp16.
-- Flag de secours: `force_fp32_on_mps=True` désactive l’autocast sur MPS si un op casse en fp16.
+
+PyTorch MPS uses float16 as the lower precision dtype for autocast (bfloat16 is not reliably supported).
+
+**Why FP16 is generally better on MPS:**
+- **~2x speedup**: Less memory bandwidth (main bottleneck on GPUs)
+- **~50% memory savings**: Half the size of FP32
+- **Optimized kernels**: MPS backend has well-optimized FP16 operations
+- **Default behavior**: PyTorch autocast on MPS uses FP16 by default
+
+**When FP32 is needed (fallback):**
+- Some MPS operations not implemented in FP16 (automatic fallback to FP32)
+- Numerical instability (NaN, divergence) - rare in inference
+- Debugging or maximum accuracy requirements
+
+**Implementation details:**
+- If `mixed_precision="bfloat16"` is requested on MPS, code automatically falls back to float16
+- BF16 is not a practical alternative on MPS (not supported by PyTorch MPS backend)
+- Default (`mixed_precision=None`) uses FP16 on MPS for best performance
+
+**Rule of thumb:** If inference runs without errors/NaN, FP16 is faster. FP32 is the safety net.
 
 ### 5. Optimized Attention for MPS
 
