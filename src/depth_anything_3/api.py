@@ -563,11 +563,11 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             if self.mixed_precision in dtype_map:
                 # bf16 not reliably supported on MPS; fall back to fp16 there
                 if device.type == "mps" and self.mixed_precision == "bfloat16":
-                    logger.warning("bfloat16 is not supported on MPS; falling back to float16")
+                    logger.warn("bfloat16 is not supported on MPS; falling back to float16")
                     return True, torch.float16
                 return True, dtype_map[self.mixed_precision]
             else:
-                logger.warning(f"Unknown mixed precision dtype: {self.mixed_precision}, using auto-detect")
+                logger.warn(f"Unknown mixed precision dtype: {self.mixed_precision}, using auto-detect")
 
         # Auto-detect (default behavior when mixed_precision is None or True)
         if device.type == "cuda":
