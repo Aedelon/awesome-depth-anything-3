@@ -194,13 +194,26 @@ class ModelInference:
 
         # Run model inference
         print(f"Running inference with method: {actual_method}")
-        with torch.no_grad():
-            prediction = self.model.inference(
-                image_paths,
-                export_dir=None,
-                process_res_method=actual_method,
-                infer_gs=infer_gs,
-            )
+        effective_batch = batch_size if batch_size is not None else min(len(image_paths), 4)
+        try:
+            with torch.no_grad():
+                prediction = self.model.inference(
+                    image_paths,
+                    export_dir=None,
+                    process_res_method=actual_method,
+                    infer_gs=infer_gs,
+                    export_feat_layers=[],
+                )
+        except RuntimeError as e:
+            # Friendly message for OOM / invalid buffer
+            msg = str(e).lower()
+            if "invalid buffer size" in msg or "out of memory" in msg:
+                raise ValueError(
+                    "Inference failed: insufficient memory. "
+                    "Essayez de réduire le nombre d'images, de choisir 'low_res', "
+                    "ou de définir un batch_size plus petit."
+                ) from e
+            raise
         # num_max_points: int = 1_000_000,
         export_to_glb(
             prediction,
