@@ -40,7 +40,8 @@ All models are trained exclusively on **public academic datasets**.
 
 
 ## 📰 News
-- **2025-11-14:** 🎉 Paper, project page, code and models are all released.
+- **25-11-2025:** Add [Awesome DA3 Projects](#-awesome-da3-projects), a community-driven section featuring DA3-based applications.
+- **14-11-2025:** Paper, project page, code and models are all released.
 
 ## ✨ Highlights
 
@@ -222,6 +223,19 @@ Generally, you should observe that DA3-LARGE achieves comparable results to VGGT
 ## ❓ FAQ
 
 - **Older GPUs without XFormers support**: See [Issue #11](https://github.com/ByteDance-Seed/Depth-Anything-3/issues/11). Thanks to [@S-Mahoney](https://github.com/S-Mahoney) for the solution!
+
+
+## 🏢 Awesome DA3 Projects
+
+A community-curated list of Depth Anything 3 integrations across 3D tools, creative pipelines, robotics, and web/VR viewers, including but not limited to these. You are welcome to submit your DA3-based project via PR, and we will review and feature it if applicable.
+
+- [DA3-blender](https://github.com/xy-gao/DA3-blender): Blender addon for DA3-based 3D reconstruction from a set of images. 
+
+- [ComfyUI-DepthAnythingV3](https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3): ComfyUI nodes for Depth Anything 3, supporting single/multi-view and video-consistent depth with optional point‑cloud export.
+
+- [DA3-ROS2-Wrapper](https://github.com/GerdsenAI/GerdsenAI-Depth-Anything-3-ROS2-Wrapper): Real-time DA3 depth in ROS2 with multi-camera support. 
+
+- [VideoDepthViewer3D](https://github.com/amariichi/VideoDepthViewer3D): Streaming videos with DA3 metric depth to a Three.js/WebXR 3D viewer for VR/stereo playback.
 
 
 ## 📝 Citations
