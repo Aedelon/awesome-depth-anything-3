@@ -226,6 +226,19 @@ The Nested series uses an Any-view model to estimate pose and depth, and a monoc
 
 - **Monocular Metric Depth**: To obtain metric depth in meters from `DA3METRIC-LARGE`, use `metric_depth = focal * net_output / 300.`, where `focal` is the focal length in pixels (typically the average of fx and fy from the camera intrinsic matrix K). Note that the output from `DA3NESTED-GIANT-LARGE` is already in meters.
 
+- **Ray Head**:  Our API and CLI support `use_ray_head` arg, which means that the model will derive camera pose from ray head, which is generally slightly slower, but more accurate. Note that the default is `False` for faster inference speed. 
+  <details>
+  <summary>AUC3 Results for DA3NESTED-GIANT-LARGE</summary>
+  
+  | Model | HiRoom | ETH3D | DTU | 7Scenes | ScanNet++ | 
+  |-------|------|-------|-----|---------|-----------|
+  | `ray_head` | 84.4 | 52.6 | 93.9 | 29.5 | 89.4 |
+  | `cam_head` | 80.3 | 48.4 | 94.1 | 28.5 | 85.0 |
+
+  </details>
+
+
+
 
 - **Older GPUs without XFormers support**: See [Issue #11](https://github.com/ByteDance-Seed/Depth-Anything-3/issues/11). Thanks to [@S-Mahoney](https://github.com/S-Mahoney) for the solution!
 

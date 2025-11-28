@@ -141,6 +141,10 @@ def auto(
     align_to_input_ext_scale: bool = typer.Option(
         True, help="[COLMAP] Align prediction to input extrinsics scale"
     ),
+    # Pose estimation options
+    use_ray_pose: bool = typer.Option(
+        False, help="Use ray-based pose estimation instead of camera decoder"
+    ),
     # GLB export options
     conf_thresh_percentile: float = typer.Option(
         40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
@@ -206,6 +210,7 @@ def auto(
             process_res=process_res,
             process_res_method=process_res_method,
             export_feat_layers=export_feat_layers,
+            use_ray_pose=use_ray_pose,
             conf_thresh_percentile=conf_thresh_percentile,
             num_max_points=num_max_points,
             show_cameras=show_cameras,
@@ -231,6 +236,7 @@ def auto(
             process_res=process_res,
             process_res_method=process_res_method,
             export_feat_layers=export_feat_layers,
+            use_ray_pose=use_ray_pose,
             conf_thresh_percentile=conf_thresh_percentile,
             num_max_points=num_max_points,
             show_cameras=show_cameras,
@@ -256,6 +262,7 @@ def auto(
             process_res=process_res,
             process_res_method=process_res_method,
             export_feat_layers=export_feat_layers,
+            use_ray_pose=use_ray_pose,
             conf_thresh_percentile=conf_thresh_percentile,
             num_max_points=num_max_points,
             show_cameras=show_cameras,
@@ -286,6 +293,7 @@ def auto(
             extrinsics=extrinsics,
             intrinsics=intrinsics,
             align_to_input_ext_scale=align_to_input_ext_scale,
+            use_ray_pose=use_ray_pose,
             conf_thresh_percentile=conf_thresh_percentile,
             num_max_points=num_max_points,
             show_cameras=show_cameras,
@@ -317,6 +325,10 @@ def image(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Pose estimation options
+    use_ray_pose: bool = typer.Option(
+        False, help="Use ray-based pose estimation instead of camera decoder"
     ),
     # GLB export options
     conf_thresh_percentile: float = typer.Option(
@@ -355,6 +367,7 @@ def image(
         process_res=process_res,
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
+        use_ray_pose=use_ray_pose,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
@@ -386,6 +399,10 @@ def images(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Pose estimation options
+    use_ray_pose: bool = typer.Option(
+        False, help="Use ray-based pose estimation instead of camera decoder"
     ),
     # GLB export options
     conf_thresh_percentile: float = typer.Option(
@@ -424,6 +441,7 @@ def images(
         process_res=process_res,
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
+        use_ray_pose=use_ray_pose,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
@@ -460,6 +478,10 @@ def colmap(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Pose estimation options
+    use_ray_pose: bool = typer.Option(
+        False, help="Use ray-based pose estimation instead of camera decoder"
     ),
     # GLB export options
     conf_thresh_percentile: float = typer.Option(
@@ -501,6 +523,7 @@ def colmap(
         extrinsics=extrinsics,
         intrinsics=intrinsics,
         align_to_input_ext_scale=align_to_input_ext_scale,
+        use_ray_pose=use_ray_pose,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
@@ -530,6 +553,10 @@ def video(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Pose estimation options
+    use_ray_pose: bool = typer.Option(
+        False, help="Use ray-based pose estimation instead of camera decoder"
     ),
     # GLB export options
     conf_thresh_percentile: float = typer.Option(
@@ -568,6 +595,7 @@ def video(
         process_res=process_res,
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
+        use_ray_pose=use_ray_pose,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
