@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import time
 from typing import Optional, Sequence
+from copy import deepcopy
 import numpy as np
 
 # Check torch import with helpful error message
@@ -52,6 +53,8 @@ from depth_anything_3.utils.io.input_processor import InputProcessor
 from depth_anything_3.utils.io.output_processor import OutputProcessor
 from depth_anything_3.utils.logger import logger
 from depth_anything_3.utils.pose_align import align_poses_umeyama
+from depth_anything_3.utils.async_exporter import AsyncExporter
+from depth_anything_3.utils.dynamic_batching import get_sorted_indices_by_aspect_ratio, chunk_indices
 
 # Platform-specific optimizations
 if torch.cuda.is_available():
@@ -110,13 +113,13 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
     _commit_hash: str | None = None  # Set by mixin when loading from Hub
 
     def __init__(
-        self,
-        model_name: str = "da3-large",
-        enable_compile: bool | None = None,
-        compile_mode: str = "reduce-overhead",
-        batch_size: int | None = None,
-        mixed_precision: bool | str | None = None,
-        **kwargs
+            self,
+            model_name: str = "da3-large",
+            enable_compile: bool | None = None,
+            compile_mode: str = "reduce-overhead",
+            batch_size: int | None = None,
+            mixed_precision: bool | str | None = None,
+            **kwargs
     ):
         """
         Initialize DepthAnything3 with specified preset.
@@ -198,12 +201,12 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
     @torch.inference_mode()
     def forward(
-        self,
-        image: torch.Tensor,
-        extrinsics: torch.Tensor | None = None,
-        intrinsics: torch.Tensor | None = None,
-        export_feat_layers: list[int] | None = None,
-        infer_gs: bool = False,
+            self,
+            image: torch.Tensor,
+            extrinsics: torch.Tensor | None = None,
+            intrinsics: torch.Tensor | None = None,
+            export_feat_layers: list[int] | None = None,
+            infer_gs: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass through the model.
@@ -228,54 +231,31 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
                 return self.model(image, extrinsics, intrinsics, export_feat_layers, infer_gs)
 
     def inference(
-        self,
-        image: list[np.ndarray | Image.Image | str],
-        extrinsics: np.ndarray | None = None,
-        intrinsics: np.ndarray | None = None,
-        align_to_input_ext_scale: bool = True,
-        infer_gs: bool = False,
-        render_exts: np.ndarray | None = None,
-        render_ixts: np.ndarray | None = None,
-        render_hw: tuple[int, int] | None = None,
-        process_res: int = 504,
-        process_res_method: str = "upper_bound_resize",
-        export_dir: str | None = None,
-        export_format: str = "mini_npz",
-        export_feat_layers: Sequence[int] | None = None,
-        # GLB export parameters
-        conf_thresh_percentile: float = 40.0,
-        num_max_points: int = 1_000_000,
-        show_cameras: bool = True,
-        # Feat_vis export parameters
-        feat_vis_fps: int = 15,
-        # Other export parameters, e.g., gs_ply, gs_video
-        export_kwargs: Optional[dict] = {},
+            self,
+            image: list[np.ndarray | Image.Image | str],
+            extrinsics: np.ndarray | None = None,
+            intrinsics: np.ndarray | None = None,
+            align_to_input_ext_scale: bool = True,
+            infer_gs: bool = False,
+            render_exts: np.ndarray | None = None,
+            render_ixts: np.ndarray | None = None,
+            render_hw: tuple[int, int] | None = None,
+            process_res: int = 504,
+            process_res_method: str = "upper_bound_resize",
+            export_dir: str | None = None,
+            export_format: str = "mini_npz",
+            export_feat_layers: Sequence[int] | None = None,
+            # GLB export parameters
+            conf_thresh_percentile: float = 40.0,
+            num_max_points: int = 1_000_000,
+            show_cameras: bool = True,
+            # Feat_vis export parameters
+            feat_vis_fps: int = 15,
+            # Other export parameters
+            export_kwargs: Optional[dict] = {},
     ) -> Prediction:
         """
-        Run inference on input images.
-
-        Args:
-            image: List of input images (numpy arrays, PIL Images, or file paths)
-            extrinsics: Camera extrinsics (N, 4, 4)
-            intrinsics: Camera intrinsics (N, 3, 3)
-            align_to_input_ext_scale: whether to align the input pose scale to the prediction
-            infer_gs: Enable the 3D Gaussian branch (needed for `gs_ply`/`gs_video` exports)
-            render_exts: Optional render extrinsics for Gaussian video export
-            render_ixts: Optional render intrinsics for Gaussian video export
-            render_hw: Optional render resolution for Gaussian video export
-            process_res: Processing resolution
-            process_res_method: Resize method for processing
-            export_dir: Directory to export results
-            export_format: Export format (mini_npz, npz, glb, ply, gs, gs_video)
-            export_feat_layers: Layer indices to export intermediate features from
-            conf_thresh_percentile: [GLB] Lower percentile for adaptive confidence threshold (default: 40.0) # noqa: E501
-            num_max_points: [GLB] Maximum number of points in the point cloud (default: 1,000,000)
-            show_cameras: [GLB] Show camera wireframes in the exported scene (default: True)
-            feat_vis_fps: [FEAT_VIS] Frame rate for output video (default: 15)
-            export_kwargs: additional arguments to export functions.
-
-        Returns:
-            Prediction object containing depth maps and camera parameters
+        Run inference on input images using Dynamic Resolution Batching and Async Export.
         """
         if "gs" in export_format:
             assert infer_gs, "must set `infer_gs=True` to perform gs-related export."
@@ -283,86 +263,231 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         if "colmap" in export_format:
             assert isinstance(image[0], str), "`image` must be image paths for COLMAP export."
 
-        # Preprocess images
-        imgs_cpu, extrinsics, intrinsics = self._preprocess_inputs(
-            image, extrinsics, intrinsics, process_res, process_res_method
-        )
-
-        # Prepare tensors for model (with optional sub-batching to save memory)
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
-        raw_output = self._run_batched_forward(
-            imgs_cpu, extrinsics, intrinsics, export_feat_layers, infer_gs
-        )
 
-        # Convert raw output to prediction
-        prediction = self._convert_to_prediction(raw_output)
+        # --- Export Strategy Setup ---
+        # Séparer les formats "streamables" (safe pour l'async par batch) des formats globaux
+        streaming_formats = []
+        global_formats = []
 
-        # Align prediction to extrinsincs
-        prediction = self._align_to_input_extrinsics_intrinsics(
-            extrinsics, intrinsics, prediction, align_to_input_ext_scale
-        )
+        # Liste des formats qui produisent des fichiers individuels (et donc safe pour le batch processing)
+        SAFE_STREAMING_FORMATS = ["mini_npz", "npz", "depth_vis"]
 
-        # Add processed images for visualization
-        prediction = self._add_processed_images(prediction, imgs_cpu)
+        if export_dir:
+            for fmt in export_format.split("-"):
+                if fmt in SAFE_STREAMING_FORMATS:
+                    streaming_formats.append(fmt)
+                else:
+                    # GLB, Video, Colmap nécessitent le contexte global ou sont des fichiers monolithiques
+                    global_formats.append(fmt)
 
-        # Export if requested
-        if export_dir is not None:
+        streaming_fmt_str = "-".join(streaming_formats)
+        global_fmt_str = "-".join(global_formats)
 
-            if "gs" in export_format:
-                if infer_gs and "gs_video" not in export_format:
-                    export_format = f"{export_format}-gs_video"
-                if "gs_video" in export_format:
-                    if "gs_video" not in export_kwargs:
-                        export_kwargs["gs_video"] = {}
-                    export_kwargs["gs_video"].update(
-                        {
-                            "extrinsics": render_exts,
-                            "intrinsics": render_ixts,
-                            "out_image_hw": render_hw,
-                        }
+        # --- Dynamic Batching Setup ---
+        bs = self.batch_size or len(image)
+        num_images = len(image)
+        sorted_indices, _ = get_sorted_indices_by_aspect_ratio(image)
+        all_results = []
+
+        logger.info(
+            f"Running inference on {num_images} images (Batch: {bs}) | Async Export: {'ON' if streaming_fmt_str else 'OFF'}")
+
+        # Initialiser l'exportateur asynchrone
+        exporter = AsyncExporter() if streaming_fmt_str else None
+
+        try:
+            # --- Processing Loop ---
+            for batch_idx_list in chunk_indices(sorted_indices, bs):
+                # a. Extract batch data
+                batch_images = [image[i] for i in batch_idx_list]
+                batch_ext = extrinsics[batch_idx_list] if extrinsics is not None else None
+                batch_int = intrinsics[batch_idx_list] if intrinsics is not None else None
+
+                # b. Preprocess
+                imgs_cpu, proc_ext, proc_int = self._preprocess_inputs(
+                    batch_images, batch_ext, batch_int, process_res, process_res_method
+                )
+
+                # c. Forward
+                imgs_tensor, ex_t, in_t = self._prepare_model_inputs(imgs_cpu, proc_ext, proc_int)
+                ex_t_norm = self._normalize_extrinsics(ex_t.clone() if ex_t is not None else None)
+
+                raw_output = self._run_model_forward(
+                    imgs_tensor, ex_t_norm, in_t, export_feat_layers, infer_gs
+                )
+
+                # d. Convert & Align
+                batch_prediction = self._convert_to_prediction(raw_output)
+                batch_prediction = self._align_to_input_extrinsics_intrinsics(
+                    proc_ext, proc_int, batch_prediction, align_to_input_ext_scale
+                )
+                batch_prediction = self._add_processed_images(batch_prediction, imgs_cpu)
+
+                # e. Async Export (Streaming)
+                if exporter:
+                    # On crée une copie des kwargs pour ce batch
+                    batch_kwargs = deepcopy(export_kwargs)
+
+                    # On soumet la tâche d'export au thread worker
+                    exporter.submit(
+                        self._handle_exports,
+                        batch_prediction,
+                        streaming_fmt_str,
+                        export_dir,
+                        batch_kwargs,
+                        infer_gs, render_exts, render_ixts, render_hw,
+                        conf_thresh_percentile, num_max_points, show_cameras,
+                        feat_vis_fps, process_res_method,
+                        batch_images  # Passer les images du batch pour le nommage des fichiers
                     )
-            # Add GLB export parameters
-            if "glb" in export_format:
-                if "glb" not in export_kwargs:
-                    export_kwargs["glb"] = {}
-                export_kwargs["glb"].update(
-                    {
-                        "conf_thresh_percentile": conf_thresh_percentile,
-                        "num_max_points": num_max_points,
-                        "show_cameras": show_cameras,
-                    }
-                )
-            # Add Feat_vis export parameters
-            if "feat_vis" in export_format:
-                if "feat_vis" not in export_kwargs:
-                    export_kwargs["feat_vis"] = {}
-                export_kwargs["feat_vis"].update(
-                    {
-                        "fps": feat_vis_fps,
-                    }
-                )
-            # Add COLMAP export parameters
-            if "colmap" in export_format:
-                if "colmap" not in export_kwargs:
-                    export_kwargs["colmap"] = {}
-                export_kwargs["colmap"].update(
-                    {
-                        "image_paths": image,
-                        "conf_thresh_percentile": conf_thresh_percentile,
-                        "process_res_method": process_res_method,
-                    }
-                )
-            self._export_results(prediction, export_format, export_dir, **export_kwargs)
 
-        return prediction
+                # f. Store results
+                for local_i, global_i in enumerate(batch_idx_list):
+                    single_pred = self._extract_single_prediction(batch_prediction, local_i)
+                    all_results.append((global_i, single_pred))
+
+        finally:
+            # S'assurer que tous les exports asynchrones sont terminés
+            if exporter:
+                exporter.shutdown(wait=True)
+
+        # --- Reassembly ---
+        all_results.sort(key=lambda x: x[0])
+        ordered_preds = [res[1] for res in all_results]
+        final_prediction = self._collate_predictions(ordered_preds)
+
+        # --- Global Export ---
+        # Exporter les formats restants (GLB, Video...) qui nécessitent toutes les données
+        if export_dir and global_fmt_str:
+            logger.info(f"Exporting global formats: {global_fmt_str}")
+            self._handle_exports(
+                final_prediction, global_fmt_str, export_dir, export_kwargs,
+                infer_gs, render_exts, render_ixts, render_hw,
+                conf_thresh_percentile, num_max_points, show_cameras,
+                feat_vis_fps, process_res_method, image
+            )
+
+        return final_prediction
+
+    def _extract_single_prediction(self, pred: Prediction, index: int) -> Prediction:
+        """Extrait le i-ème élément d'un objet Prediction batché."""
+        init_kwargs = {}
+        for field in pred.__dataclass_fields__:
+            val = getattr(pred, field)
+            if val is None:
+                init_kwargs[field] = None
+                continue
+
+            # Slicing logic
+            if (not isinstance(val, dict)
+                    and hasattr(val, "__getitem__")
+                    and hasattr(val, "shape")
+                    and val.shape[0] > index
+            ):
+                init_kwargs[field] = val[index: index + 1]
+            elif isinstance(val, dict):
+                new_dict = {}
+                for k, v in val.items():
+                    if hasattr(v, "__getitem__"):
+                        new_dict[k] = v[index: index + 1]
+                init_kwargs[field] = new_dict
+            else:
+                init_kwargs[field] = val
+
+        return Prediction(**init_kwargs)
+
+    def _collate_predictions(self, preds: list[Prediction]) -> Prediction:
+        """Fusionne une liste de Predictions en une seule Prediction."""
+        if not preds:
+            # Retourne None ou lève une erreur appropriée si la liste est vide
+            # Ici on suppose que le code appelant gère ça ou que preds n'est jamais vide
+            return None
+
+        first = preds[0]
+        init_kwargs = {}
+
+        for field in first.__dataclass_fields__:
+            val_0 = getattr(first, field)
+            if val_0 is None:
+                init_kwargs[field] = None
+                continue
+
+            if isinstance(val_0, np.ndarray):
+                all_vals = [getattr(p, field) for p in preds]
+                init_kwargs[field] = self._pad_concat_numpy(all_vals)
+            elif isinstance(val_0, dict):
+                merged_dict = {}
+                # Assuming all dicts have same keys
+                for k in val_0.keys():
+                    all_sub_vals = [getattr(p, field)[k] for p in preds]
+                    merged_dict[k] = np.concatenate(all_sub_vals, axis=0)
+                init_kwargs[field] = merged_dict
+            else:
+                # For scalars or lists that shouldn't be concatenated, take the first one
+                init_kwargs[field] = val_0
+
+        return Prediction(**init_kwargs)
+
+    def _handle_exports(
+            self, prediction, export_format, export_dir, export_kwargs,
+            infer_gs, render_exts, render_ixts, render_hw,
+            conf_thresh_percentile, num_max_points, show_cameras,
+            feat_vis_fps, process_res_method, image
+    ):
+        if "gs" in export_format:
+            if infer_gs and "gs_video" not in export_format:
+                export_format = f"{export_format}-gs_video"
+            if "gs_video" in export_format:
+                if "gs_video" not in export_kwargs:
+                    export_kwargs["gs_video"] = {}
+                export_kwargs["gs_video"].update(
+                    {
+                        "extrinsics": render_exts,
+                        "intrinsics": render_ixts,
+                        "out_image_hw": render_hw,
+                    }
+                )
+        # Add GLB export parameters
+        if "glb" in export_format:
+            if "glb" not in export_kwargs:
+                export_kwargs["glb"] = {}
+            export_kwargs["glb"].update(
+                {
+                    "conf_thresh_percentile": conf_thresh_percentile,
+                    "num_max_points": num_max_points,
+                    "show_cameras": show_cameras,
+                }
+            )
+        # Add Feat_vis export parameters
+        if "feat_vis" in export_format:
+            if "feat_vis" not in export_kwargs:
+                export_kwargs["feat_vis"] = {}
+            export_kwargs["feat_vis"].update(
+                {
+                    "fps": feat_vis_fps,
+                }
+            )
+        # Add COLMAP export parameters
+        if "colmap" in export_format:
+            if "colmap" not in export_kwargs:
+                export_kwargs["colmap"] = {}
+            export_kwargs["colmap"].update(
+                {
+                    "image_paths": image,
+                    "conf_thresh_percentile": conf_thresh_percentile,
+                    "process_res_method": process_res_method,
+                }
+            )
+        self._export_results(prediction, export_format, export_dir, **export_kwargs)
 
     def _preprocess_inputs(
-        self,
-        image: list[np.ndarray | Image.Image | str],
-        extrinsics: np.ndarray | None = None,
-        intrinsics: np.ndarray | None = None,
-        process_res: int = 504,
-        process_res_method: str = "upper_bound_resize",
+            self,
+            image: list[np.ndarray | Image.Image | str],
+            extrinsics: np.ndarray | None = None,
+            intrinsics: np.ndarray | None = None,
+            process_res: int = 504,
+            process_res_method: str = "upper_bound_resize",
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Preprocess input images using input processor."""
         start_time = time.time()
@@ -383,10 +508,10 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return imgs_cpu, extrinsics, intrinsics
 
     def _prepare_model_inputs(
-        self,
-        imgs_cpu: torch.Tensor,
-        extrinsics: torch.Tensor | None,
-        intrinsics: torch.Tensor | None,
+            self,
+            imgs_cpu: torch.Tensor,
+            extrinsics: torch.Tensor | None,
+            intrinsics: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Prepare tensors for model input."""
         device = self._get_model_device()
@@ -424,18 +549,17 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return imgs, ex_t, in_t
 
     def _run_batched_forward(
-        self,
-        imgs_cpu: torch.Tensor,
-        extrinsics: torch.Tensor | None,
-        intrinsics: torch.Tensor | None,
-        export_feat_layers: Sequence[int] | None,
-        infer_gs: bool,
+            self,
+            imgs_cpu: torch.Tensor,
+            extrinsics: torch.Tensor | None,
+            intrinsics: torch.Tensor | None,
+            export_feat_layers: Sequence[int] | None,
+            infer_gs: bool,
     ) -> dict[str, torch.Tensor]:
         """
         Run forward pass, optionally splitting the batch to save memory.
-
-        When self.batch_size is set and smaller than the number of images,
-        images are processed in sub-batches and outputs are concatenated.
+        Note: This is kept for backward compatibility but dynamic batching uses
+        the loop inside inference() directly.
         """
         num_imgs = imgs_cpu.shape[0]
         bs = self.batch_size or num_imgs
@@ -487,12 +611,12 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return ex_t_norm
 
     def _align_to_input_extrinsics_intrinsics(
-        self,
-        extrinsics: torch.Tensor | None,
-        intrinsics: torch.Tensor | None,
-        prediction: Prediction,
-        align_to_input_ext_scale: bool = True,
-        ransac_view_thresh: int = 10,
+            self,
+            extrinsics: torch.Tensor | None,
+            intrinsics: torch.Tensor | None,
+            prediction: Prediction,
+            align_to_input_ext_scale: bool = True,
+            ransac_view_thresh: int = 10,
     ) -> Prediction:
         """Align depth map to input extrinsics"""
         if extrinsics is None:
@@ -513,12 +637,12 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return prediction
 
     def _run_model_forward(
-        self,
-        imgs: torch.Tensor,
-        ex_t: torch.Tensor | None,
-        in_t: torch.Tensor | None,
-        export_feat_layers: Sequence[int] | None = None,
-        infer_gs: bool = False,
+            self,
+            imgs: torch.Tensor,
+            ex_t: torch.Tensor | None,
+            in_t: torch.Tensor | None,
+            export_feat_layers: Sequence[int] | None = None,
+            infer_gs: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Run model forward pass."""
         device = imgs.device
@@ -558,7 +682,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return prediction
 
     def _export_results(
-        self, prediction: Prediction, export_format: str, export_dir: str, **kwargs
+            self, prediction: Prediction, export_format: str, export_dir: str, **kwargs
     ) -> None:
         """Export results to specified format and directory."""
         start_time = time.time()
@@ -661,3 +785,53 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             return buffer.device
 
         raise ValueError("No tensor found in model")
+
+    def _pad_concat_numpy(self, arrays: list[np.ndarray], axis: int = 0) -> np.ndarray:
+        """
+        Remplit (pad) et concatène les tableaux numpy ayant des dimensions spatiales différentes.
+        Ceci est nécessaire pour reassembler les résultats du Dynamic Batching.
+        """
+        if not arrays:
+            # Retourne un tableau vide compatible avec l'initialisation ultérieure
+            return np.array([])
+
+        # 1. Vérification rapide si le padding est nécessaire
+        need_padding = False
+        first_shape = arrays[0].shape
+        for arr in arrays[1:]:
+            if len(arr.shape) != len(first_shape) or any(
+                    arr.shape[i] != first_shape[i] for i in range(1, len(first_shape))):
+                need_padding = True
+                break
+
+        if not need_padding:
+            # Chemins rapide : concaténation standard si toutes les dimensions correspondent
+            return np.concatenate(arrays, axis=axis)
+
+        # 2. Trouver les dimensions maximales
+        max_dims = list(first_shape)
+        for arr in arrays:
+            # Commence à l'index 1 (dim de batch 0 est ignorée)
+            for i in range(1, len(arr.shape)):
+                if i < len(max_dims):
+                    max_dims[i] = max(max_dims[i], arr.shape[i])
+                # Gère le cas improbable où un tableau a plus de dimensions spatiales
+                else:
+                    max_dims.append(arr.shape[i])
+
+        # 3. Appliquer le padding et concaténer
+        padded_arrays = []
+        for arr in arrays:
+            pad_width = [(0, 0)] * len(arr.shape)
+            # Applique le padding de l'index 1 aux dimensions maximales
+            for i in range(1, len(arr.shape)):
+                pad_needed = max_dims[i] - arr.shape[i]
+                if pad_needed > 0:
+                    # Pad seulement à la fin (droite/bas)
+                    pad_width[i] = (0, pad_needed)
+
+                    # Utilise 'constant' (valeur par défaut 0) pour remplir l'espace
+            padded_arr = np.pad(arr, pad_width=pad_width, mode='constant', constant_values=0)
+            padded_arrays.append(padded_arr)
+
+        return np.concatenate(padded_arrays, axis=axis)
