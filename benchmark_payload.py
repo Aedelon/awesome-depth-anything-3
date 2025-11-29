@@ -7,6 +7,7 @@ import torch
 # L'import sera résolu dynamiquement selon le PYTHONPATH défini par le runner
 from depth_anything_3.api import DepthAnything3
 
+EXPORT_DIR = "temp_bench_out"
 
 def generate_mixed_aspect_ratio_dataset(n=48, output_dir="temp_bench_data"):
     """Génère des images fictives avec des ratios variés (Wide, Tall, Square)"""
@@ -38,8 +39,7 @@ def generate_mixed_aspect_ratio_dataset(n=48, output_dir="temp_bench_data"):
 
 def run_benchmark():
     # 1. Préparation
-    paths = generate_mixed_aspect_ratio_dataset(n=500)
-    export_dir = "temp_bench_out"
+    paths = generate_mixed_aspect_ratio_dataset(n=4096)
 
     # --- DÉTECTION DEVICE CORRIGÉE ---
     if torch.cuda.is_available():
@@ -55,22 +55,11 @@ def run_benchmark():
     # --- C'EST ICI QUE ÇA CHANGE ---
     # On essaie d'activer la quantification.
     # Si le code (Vanilla) ne supporte pas l'argument, on fallback sur la version standard.
-    params = {"model_name": "da3-small", "batch_size": 4}
+    params = {"model_name": "da3-base", "batch_size": 1}
 
-    try:
-        # On tente d'activer l'option qu'on vient d'ajouter
-        model = DepthAnything3(**params)
-    except TypeError:
-        # Le code Vanilla va lever une erreur ici, on l'attrape pour continuer
-        model = DepthAnything3(**params)
+    model = DepthAnything3(**params)
 
-    if torch.cuda.is_available():
-        model = model.to("cuda")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        model = model.to("mps")
-        print("🚀 Moved model to MPS")
-    else:
-        print("🐢 Running on CPU")
+    model = model.to(device)
 
     # 2. Warmup
     print("Warming up...")
@@ -86,10 +75,17 @@ def run_benchmark():
         torch.mps.synchronize()
 
     t0 = time.time()
-    try:
-        model.inference(paths, export_dir=export_dir, export_format="mini_npz")
-    except Exception as e:
-        model.inference(paths)
+
+    if hasattr(model, "enable_compile"):
+        model.inference(paths, export_dir=EXPORT_DIR, export_format="mini_npz")
+    else:
+        for batch in range(0, len(paths), params["batch_size"]):
+            if batch % params["batch_size"] == 0:
+                batch_paths = paths[batch: batch + params["batch_size"]]
+            else:
+                batch_paths = paths[batch:]
+
+            model.inference(batch_paths)
 
     if device == "cuda":
         torch.cuda.synchronize()
@@ -104,8 +100,8 @@ def run_benchmark():
     # Nettoyage
     if os.path.exists("temp_bench_data"):
         shutil.rmtree("temp_bench_data")
-    if os.path.exists(export_dir):
-        shutil.rmtree(export_dir)
+    if os.path.exists(EXPORT_DIR):
+        shutil.rmtree(EXPORT_DIR)
 
 
 if __name__ == "__main__":

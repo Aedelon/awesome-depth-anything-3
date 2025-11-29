@@ -43,7 +43,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-app = ["gradio>=5", "pillow>=9.0"] # requires that python3>=3.10
+app = [
+ "pillow>=9.0",
+] # requires that python3>=3.10
 # Note: gsplat is installed via setup.py post-install hook (requires torch to be installed first)
 all = ["depth-anything-3[app]"]
 

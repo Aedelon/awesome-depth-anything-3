@@ -45,7 +45,6 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 app = typer.Typer(help="Depth Anything 3 - Video depth estimation CLI", add_completion=False)
 
-
 # ============================================================================
 # Input type detection utilities
 # ============================================================================
@@ -101,8 +100,24 @@ def detect_input_type(input_path: str) -> str:
 
 
 # ============================================================================
-# Common parameters and configuration
+# Helper functions
 # ============================================================================
+
+def _parse_mixed_precision(mixed_precision: str | None) -> Optional[Union[bool, str]]:
+    """Helper to parse mixed_precision string to bool or string."""
+    if not mixed_precision:
+        return None
+    mp_lower = mixed_precision.lower()
+    if mp_lower in ("auto", "none"):
+        return None
+    elif mp_lower in ("fp16", "float16"):
+        return "float16"
+    elif mp_lower in ("bf16", "bfloat16"):
+        return "bfloat16"
+    elif mp_lower in ("fp32", "float32"):
+        return False
+    return None
+
 
 # ============================================================================
 # Inference commands
@@ -111,66 +126,70 @@ def detect_input_type(input_path: str) -> str:
 
 @app.command()
 def auto(
-    input_path: str = typer.Argument(
-        ..., help="Path to input (image, directory, video, or COLMAP)"
-    ),
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, help="Export directory"),
-    export_format: str = typer.Option("glb", help="Export format"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    use_backend: bool = typer.Option(False, help="Use backend service for inference"),
-    backend_url: str = typer.Option(
-        "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
-    ),
-    process_res: int = typer.Option(504, help="Processing resolution"),
-    process_res_method: str = typer.Option(
-        "upper_bound_resize", help="Processing resolution method"
-    ),
-    export_feat: str = typer.Option(
-        "",
-        help="[FEAT_VIS]Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
-    ),
-    auto_cleanup: bool = typer.Option(
-        False, help="Automatically clean export directory if it exists (no prompt)"
-    ),
-    # Video-specific options
-    fps: float = typer.Option(1.0, help="[Video] Sampling FPS for frame extraction"),
-    # COLMAP-specific options
-    sparse_subdir: str = typer.Option(
-        "", help="[COLMAP] Sparse reconstruction subdirectory (e.g., '0' for sparse/0/)"
-    ),
-    align_to_input_ext_scale: bool = typer.Option(
-        True, help="[COLMAP] Align prediction to input extrinsics scale"
-    ),
-    # GLB export options
-    conf_thresh_percentile: float = typer.Option(
-        40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
-    ),
-    num_max_points: int = typer.Option(
-        1_000_000, help="[GLB] Maximum number of points in the point cloud"
-    ),
-    show_cameras: bool = typer.Option(
-        True, help="[GLB] Show camera wireframes in the exported scene"
-    ),
-    # Feat_vis export options
-    feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
-    batch_size: int = typer.Option(
-        None,
-        help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
-    ),
-    mixed_precision: str = typer.Option(
-        "auto",
-        help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
-    ),
+        input_path: str = typer.Argument(
+            ..., help="Path to input (image, directory, video, or COLMAP)"
+        ),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, "--out", "-o", help="Export directory"),
+        export_format: str = typer.Option("glb", help="Export format (e.g. 'glb', 'mini_npz-gs', 'depth_vis')"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        use_backend: bool = typer.Option(False, help="Use backend service for inference"),
+        backend_url: str = typer.Option(
+            "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
+        ),
+        process_res: int = typer.Option(504, help="Processing resolution"),
+        process_res_method: str = typer.Option(
+            "upper_bound_resize", help="Processing resolution method"
+        ),
+        export_feat: str = typer.Option(
+            "",
+            help="[FEAT_VIS]Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
+        ),
+        auto_cleanup: bool = typer.Option(
+            False, help="Automatically clean export directory if it exists (no prompt)"
+        ),
+        # Video-specific options
+        fps: float = typer.Option(1.0, help="[Video] Sampling FPS for frame extraction"),
+        # COLMAP-specific options
+        sparse_subdir: str = typer.Option(
+            "", help="[COLMAP] Sparse reconstruction subdirectory (e.g., '0' for sparse/0/)"
+        ),
+        align_to_input_ext_scale: bool = typer.Option(
+            True, help="[COLMAP] Align prediction to input extrinsics scale"
+        ),
+        # GLB export options
+        conf_thresh_percentile: float = typer.Option(
+            40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
+        ),
+        num_max_points: int = typer.Option(
+            1_000_000, help="[GLB] Maximum number of points in the point cloud"
+        ),
+        show_cameras: bool = typer.Option(
+            True, help="[GLB] Show camera wireframes in the exported scene"
+        ),
+        # Feat_vis export options
+        feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
+        batch_size: int = typer.Option(
+            None,
+            help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
+        ),
+        mixed_precision: str = typer.Option(
+            "auto",
+            help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
+        ),
+        # --- Performance Options ---
+        enable_compile: bool = typer.Option(
+            True, help="Enable torch.compile optimization (faster inference, slower startup)."
+        ),
+        compile_mode: str = typer.Option(
+            "reduce-overhead", help="Compilation mode: reduce-overhead | max-autotune"
+        ),
+        use_prefetch: bool = typer.Option(
+            True, help="Use async data prefetching pipeline for max GPU usage."
+        ),
 ):
     """
     Automatically detect input type and run appropriate processing.
-
-    Supports:
-    - Single image file (.jpg, .png, etc.)
-    - Directory of images
-    - Video file (.mp4, .avi, etc.)
-    - COLMAP directory (with 'images' and 'sparse' subdirectories)
     """
     # Detect input type
     input_type = detect_input_type(input_path)
@@ -196,130 +215,57 @@ def auto(
     export_feat_layers = parse_export_feat(export_feat)
 
     # Parse mixed_precision option
-    mp_value: Optional[Union[bool, str]]
-    mp_lower = mixed_precision.lower() if mixed_precision else "auto"
-    if mp_lower in ("auto", "none"):
-        mp_value = None
-    elif mp_lower in ("fp16", "float16"):
-        mp_value = "float16"
-    elif mp_lower in ("bf16", "bfloat16"):
-        mp_value = "bfloat16"
-    elif mp_lower in ("fp32", "float32"):
-        mp_value = False
-    else:
-        raise typer.BadParameter("mixed_precision must be one of auto|fp16|fp32|bf16")
+    mp_value = _parse_mixed_precision(mixed_precision)
 
     # Route to appropriate handler
     if input_type == "image":
         typer.echo("Processing single image...")
-        # Process input
         image_files = ImageHandler.process(input_path)
-
-        # Handle export directory
-        export_dir = InputHandler.handle_export_dir(export_dir, auto_cleanup)
-
-        # Run inference
-        run_inference(
-            image_paths=image_files,
-            export_dir=export_dir,
-            model_dir=model_dir,
-            device=device,
-            backend_url=final_backend_url,
-            export_format=export_format,
-            process_res=process_res,
-            process_res_method=process_res_method,
-            export_feat_layers=export_feat_layers,
-            batch_size=batch_size,
-            mixed_precision=mp_value,
-            conf_thresh_percentile=conf_thresh_percentile,
-            num_max_points=num_max_points,
-            show_cameras=show_cameras,
-            feat_vis_fps=feat_vis_fps,
-        )
-
     elif input_type == "images":
         typer.echo("Processing directory of images...")
-        # Process input - use default extensions
         image_files = ImagesHandler.process(input_path, "png,jpg,jpeg")
-
-        # Handle export directory
-        export_dir = InputHandler.handle_export_dir(export_dir, auto_cleanup)
-
-        # Run inference
-        run_inference(
-            image_paths=image_files,
-            export_dir=export_dir,
-            model_dir=model_dir,
-            device=device,
-            backend_url=final_backend_url,
-            export_format=export_format,
-            process_res=process_res,
-            process_res_method=process_res_method,
-            export_feat_layers=export_feat_layers,
-            batch_size=batch_size,
-            mixed_precision=mp_value,
-            conf_thresh_percentile=conf_thresh_percentile,
-            num_max_points=num_max_points,
-            show_cameras=show_cameras,
-            feat_vis_fps=feat_vis_fps,
-        )
-
     elif input_type == "video":
         typer.echo(f"Processing video with FPS={fps}...")
-        # Handle export directory
+        # Handle export directory early for video extraction
         export_dir = InputHandler.handle_export_dir(export_dir, auto_cleanup)
-
-        # Process input
         image_files = VideoHandler.process(input_path, export_dir, fps)
-
-        # Run inference
-        run_inference(
-            image_paths=image_files,
-            export_dir=export_dir,
-            model_dir=model_dir,
-            device=device,
-            backend_url=final_backend_url,
-            export_format=export_format,
-            process_res=process_res,
-            process_res_method=process_res_method,
-            export_feat_layers=export_feat_layers,
-            batch_size=batch_size,
-            mixed_precision=mp_value,
-            conf_thresh_percentile=conf_thresh_percentile,
-            num_max_points=num_max_points,
-            show_cameras=show_cameras,
-            feat_vis_fps=feat_vis_fps,
-        )
-
     elif input_type == "colmap":
-        typer.echo(
-            f"Processing COLMAP directory (sparse subdirectory: '{sparse_subdir or 'default'}')..."
-        )
-        # Process input
+        typer.echo(f"Processing COLMAP directory (sparse subdirectory: '{sparse_subdir or 'default'}')...")
         image_files, extrinsics, intrinsics = ColmapHandler.process(input_path, sparse_subdir)
 
-        # Handle export directory
+    # Common execution logic
+    if input_type != "video":  # Export dir not handled yet for others
         export_dir = InputHandler.handle_export_dir(export_dir, auto_cleanup)
 
-        # Run inference
-        run_inference(
-            image_paths=image_files,
-            export_dir=export_dir,
-            model_dir=model_dir,
-            device=device,
-            backend_url=final_backend_url,
-            export_format=export_format,
-            process_res=process_res,
-            process_res_method=process_res_method,
-            export_feat_layers=export_feat_layers,
-            extrinsics=extrinsics,
-            intrinsics=intrinsics,
-            align_to_input_ext_scale=align_to_input_ext_scale,
-            conf_thresh_percentile=conf_thresh_percentile,
-            num_max_points=num_max_points,
-            show_cameras=show_cameras,
-            feat_vis_fps=feat_vis_fps,
-        )
+    # Prepare specific kwargs
+    extra_kwargs = {}
+    if input_type == "colmap":
+        extra_kwargs["extrinsics"] = extrinsics
+        extra_kwargs["intrinsics"] = intrinsics
+        extra_kwargs["align_to_input_ext_scale"] = align_to_input_ext_scale
+
+    run_inference(
+        image_paths=image_files,
+        export_dir=export_dir,
+        model_dir=model_dir,
+        device=device,
+        backend_url=final_backend_url,
+        export_format=export_format,
+        process_res=process_res,
+        process_res_method=process_res_method,
+        export_feat_layers=export_feat_layers,
+        batch_size=batch_size,
+        mixed_precision=mp_value,
+        conf_thresh_percentile=conf_thresh_percentile,
+        num_max_points=num_max_points,
+        show_cameras=show_cameras,
+        feat_vis_fps=feat_vis_fps,
+        # Performance args
+        enable_compile=enable_compile,
+        compile_mode=compile_mode,
+        use_prefetch=use_prefetch,
+        **extra_kwargs
+    )
 
     typer.echo()
     typer.echo("✅ Processing completed successfully!")
@@ -327,46 +273,56 @@ def auto(
 
 @app.command()
 def image(
-    image_path: str = typer.Argument(..., help="Path to input image file"),
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, help="Export directory"),
-    export_format: str = typer.Option("glb", help="Export format"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    use_backend: bool = typer.Option(False, help="Use backend service for inference"),
-    backend_url: str = typer.Option(
-        "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
-    ),
-    process_res: int = typer.Option(504, help="Processing resolution"),
-    process_res_method: str = typer.Option(
-        "upper_bound_resize", help="Processing resolution method"
-    ),
-    export_feat: str = typer.Option(
-        "",
-        help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
-    ),
-    auto_cleanup: bool = typer.Option(
-        False, help="Automatically clean export directory if it exists (no prompt)"
-    ),
-    # GLB export options
-    conf_thresh_percentile: float = typer.Option(
-        40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
-    ),
-    num_max_points: int = typer.Option(
-        1_000_000, help="[GLB] Maximum number of points in the point cloud"
-    ),
-    show_cameras: bool = typer.Option(
-        True, help="[GLB] Show camera wireframes in the exported scene"
-    ),
-    # Feat_vis export options
-    feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
-    batch_size: int = typer.Option(
-        None,
-        help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
-    ),
-    mixed_precision: str = typer.Option(
-        "auto",
-        help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
-    ),
+        image_path: str = typer.Argument(..., help="Path to input image file"),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, "--out", "-o", help="Export directory"),
+        export_format: str = typer.Option("glb", help="Export format"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        use_backend: bool = typer.Option(False, help="Use backend service for inference"),
+        backend_url: str = typer.Option(
+            "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
+        ),
+        process_res: int = typer.Option(504, help="Processing resolution"),
+        process_res_method: str = typer.Option(
+            "upper_bound_resize", help="Processing resolution method"
+        ),
+        export_feat: str = typer.Option(
+            "",
+            help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
+        ),
+        auto_cleanup: bool = typer.Option(
+            False, help="Automatically clean export directory if it exists (no prompt)"
+        ),
+        # GLB export options
+        conf_thresh_percentile: float = typer.Option(
+            40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
+        ),
+        num_max_points: int = typer.Option(
+            1_000_000, help="[GLB] Maximum number of points in the point cloud"
+        ),
+        show_cameras: bool = typer.Option(
+            True, help="[GLB] Show camera wireframes in the exported scene"
+        ),
+        # Feat_vis export options
+        feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
+        batch_size: int = typer.Option(
+            None,
+            help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
+        ),
+        mixed_precision: str = typer.Option(
+            "auto",
+            help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
+        ),
+        # --- Performance Options ---
+        enable_compile: bool = typer.Option(
+            True, help="Enable torch.compile optimization."
+        ),
+        compile_mode: str = typer.Option(
+            "reduce-overhead", help="Compilation mode: reduce-overhead | max-autotune"
+        ),
+        use_prefetch: bool = typer.Option(
+            True, help="Use async data prefetching."
+        ),
 ):
     """Run camera pose and depth estimation on a single image."""
     # Process input
@@ -400,54 +356,68 @@ def image(
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        # Performance
+        enable_compile=enable_compile,
+        compile_mode=compile_mode,
+        use_prefetch=use_prefetch,
     )
 
 
 @app.command()
 def images(
-    images_dir: str = typer.Argument(..., help="Path to directory containing input images"),
-    image_extensions: str = typer.Option(
-        "png,jpg,jpeg", help="Comma-separated image file extensions to process"
-    ),
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, help="Export directory"),
-    export_format: str = typer.Option("glb", help="Export format"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    use_backend: bool = typer.Option(False, help="Use backend service for inference"),
-    backend_url: str = typer.Option(
-        "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
-    ),
-    process_res: int = typer.Option(504, help="Processing resolution"),
-    process_res_method: str = typer.Option(
-        "upper_bound_resize", help="Processing resolution method"
-    ),
-    export_feat: str = typer.Option(
-        "",
-        help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
-    ),
-    auto_cleanup: bool = typer.Option(
-        False, help="Automatically clean export directory if it exists (no prompt)"
-    ),
-    # GLB export options
-    conf_thresh_percentile: float = typer.Option(
-        40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
-    ),
-    num_max_points: int = typer.Option(
-        1_000_000, help="[GLB] Maximum number of points in the point cloud"
-    ),
-    show_cameras: bool = typer.Option(
-        True, help="[GLB] Show camera wireframes in the exported scene"
-    ),
-    # Feat_vis export options
-    feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
-    batch_size: int = typer.Option(
-        None,
-        help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
-    ),
-    mixed_precision: str = typer.Option(
-        "auto",
-        help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
-    ),
+        images_dir: str = typer.Argument(..., help="Path to directory containing input images"),
+        image_extensions: str = typer.Option(
+            "png,jpg,jpeg", help="Comma-separated image file extensions to process"
+        ),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, "--out", "-o", help="Export directory"),
+        export_format: str = typer.Option("glb", help="Export format"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        use_backend: bool = typer.Option(False, help="Use backend service for inference"),
+        backend_url: str = typer.Option(
+            "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
+        ),
+        process_res: int = typer.Option(504, help="Processing resolution"),
+        process_res_method: str = typer.Option(
+            "upper_bound_resize", help="Processing resolution method"
+        ),
+        export_feat: str = typer.Option(
+            "",
+            help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
+        ),
+        auto_cleanup: bool = typer.Option(
+            False, help="Automatically clean export directory if it exists (no prompt)"
+        ),
+        # GLB export options
+        conf_thresh_percentile: float = typer.Option(
+            40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
+        ),
+        num_max_points: int = typer.Option(
+            1_000_000, help="[GLB] Maximum number of points in the point cloud"
+        ),
+        show_cameras: bool = typer.Option(
+            True, help="[GLB] Show camera wireframes in the exported scene"
+        ),
+        # Feat_vis export options
+        feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
+        batch_size: int = typer.Option(
+            None,
+            help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
+        ),
+        mixed_precision: str = typer.Option(
+            "auto",
+            help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
+        ),
+        # --- Performance Options ---
+        enable_compile: bool = typer.Option(
+            True, help="Enable torch.compile optimization."
+        ),
+        compile_mode: str = typer.Option(
+            "reduce-overhead", help="Compilation mode: reduce-overhead | max-autotune"
+        ),
+        use_prefetch: bool = typer.Option(
+            True, help="Use async data prefetching."
+        ),
 ):
     """Run camera pose and depth estimation on a directory of images."""
     # Process input
@@ -481,59 +451,73 @@ def images(
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        # Performance
+        enable_compile=enable_compile,
+        compile_mode=compile_mode,
+        use_prefetch=use_prefetch,
     )
 
 
 @app.command()
 def colmap(
-    colmap_dir: str = typer.Argument(
-        ..., help="Path to COLMAP directory containing 'images' and 'sparse' subdirectories"
-    ),
-    sparse_subdir: str = typer.Option(
-        "", help="Sparse reconstruction subdirectory (e.g., '0' for sparse/0/, empty for sparse/)"
-    ),
-    align_to_input_ext_scale: bool = typer.Option(
-        True, help="Align prediction to input extrinsics scale"
-    ),
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, help="Export directory"),
-    export_format: str = typer.Option("glb", help="Export format"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    use_backend: bool = typer.Option(False, help="Use backend service for inference"),
-    backend_url: str = typer.Option(
-        "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
-    ),
-    process_res: int = typer.Option(504, help="Processing resolution"),
-    process_res_method: str = typer.Option(
-        "upper_bound_resize", help="Processing resolution method"
-    ),
-    export_feat: str = typer.Option(
-        "",
-        help="Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
-    ),
-    auto_cleanup: bool = typer.Option(
-        False, help="Automatically clean export directory if it exists (no prompt)"
-    ),
-    # GLB export options
-    conf_thresh_percentile: float = typer.Option(
-        40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
-    ),
-    num_max_points: int = typer.Option(
-        1_000_000, help="[GLB] Maximum number of points in the point cloud"
-    ),
-    show_cameras: bool = typer.Option(
-        True, help="[GLB] Show camera wireframes in the exported scene"
-    ),
-    # Feat_vis export options
-    feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
-    batch_size: int = typer.Option(
-        None,
-        help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
-    ),
-    mixed_precision: str = typer.Option(
-        "auto",
-        help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
-    ),
+        colmap_dir: str = typer.Argument(
+            ..., help="Path to COLMAP directory containing 'images' and 'sparse' subdirectories"
+        ),
+        sparse_subdir: str = typer.Option(
+            "", help="Sparse reconstruction subdirectory (e.g., '0' for sparse/0/, empty for sparse/)"
+        ),
+        align_to_input_ext_scale: bool = typer.Option(
+            True, help="Align prediction to input extrinsics scale"
+        ),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, "--out", "-o", help="Export directory"),
+        export_format: str = typer.Option("glb", help="Export format"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        use_backend: bool = typer.Option(False, help="Use backend service for inference"),
+        backend_url: str = typer.Option(
+            "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
+        ),
+        process_res: int = typer.Option(504, help="Processing resolution"),
+        process_res_method: str = typer.Option(
+            "upper_bound_resize", help="Processing resolution method"
+        ),
+        export_feat: str = typer.Option(
+            "",
+            help="Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
+        ),
+        auto_cleanup: bool = typer.Option(
+            False, help="Automatically clean export directory if it exists (no prompt)"
+        ),
+        # GLB export options
+        conf_thresh_percentile: float = typer.Option(
+            40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
+        ),
+        num_max_points: int = typer.Option(
+            1_000_000, help="[GLB] Maximum number of points in the point cloud"
+        ),
+        show_cameras: bool = typer.Option(
+            True, help="[GLB] Show camera wireframes in the exported scene"
+        ),
+        # Feat_vis export options
+        feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
+        batch_size: int = typer.Option(
+            None,
+            help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
+        ),
+        mixed_precision: str = typer.Option(
+            "auto",
+            help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
+        ),
+        # --- Performance Options ---
+        enable_compile: bool = typer.Option(
+            True, help="Enable torch.compile optimization."
+        ),
+        compile_mode: str = typer.Option(
+            "reduce-overhead", help="Compilation mode: reduce-overhead | max-autotune"
+        ),
+        use_prefetch: bool = typer.Option(
+            True, help="Use async data prefetching."
+        ),
 ):
     """Run pose conditioned depth estimation on COLMAP data."""
     # Process input
@@ -570,52 +554,66 @@ def colmap(
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        # Performance
+        enable_compile=enable_compile,
+        compile_mode=compile_mode,
+        use_prefetch=use_prefetch,
     )
 
 
 @app.command()
 def video(
-    video_path: str = typer.Argument(..., help="Path to input video file"),
-    fps: float = typer.Option(1.0, help="Sampling FPS for frame extraction"),
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, help="Export directory"),
-    export_format: str = typer.Option("glb", help="Export format"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    use_backend: bool = typer.Option(False, help="Use backend service for inference"),
-    backend_url: str = typer.Option(
-        "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
-    ),
-    process_res: int = typer.Option(504, help="Processing resolution"),
-    process_res_method: str = typer.Option(
-        "upper_bound_resize", help="Processing resolution method"
-    ),
-    export_feat: str = typer.Option(
-        "",
-        help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
-    ),
-    auto_cleanup: bool = typer.Option(
-        False, help="Automatically clean export directory if it exists (no prompt)"
-    ),
-    # GLB export options
-    conf_thresh_percentile: float = typer.Option(
-        40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
-    ),
-    num_max_points: int = typer.Option(
-        1_000_000, help="[GLB] Maximum number of points in the point cloud"
-    ),
-    show_cameras: bool = typer.Option(
-        True, help="[GLB] Show camera wireframes in the exported scene"
-    ),
-    # Feat_vis export options
-    feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
-    batch_size: int = typer.Option(
-        None,
-        help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
-    ),
-    mixed_precision: str = typer.Option(
-        "auto",
-        help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
-    ),
+        video_path: str = typer.Argument(..., help="Path to input video file"),
+        fps: float = typer.Option(1.0, help="Sampling FPS for frame extraction"),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        export_dir: str = typer.Option(DEFAULT_EXPORT_DIR, "--out", "-o", help="Export directory"),
+        export_format: str = typer.Option("glb", help="Export format"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        use_backend: bool = typer.Option(False, help="Use backend service for inference"),
+        backend_url: str = typer.Option(
+            "http://localhost:8008", help="Backend URL (default: http://localhost:8008)"
+        ),
+        process_res: int = typer.Option(504, help="Processing resolution"),
+        process_res_method: str = typer.Option(
+            "upper_bound_resize", help="Processing resolution method"
+        ),
+        export_feat: str = typer.Option(
+            "",
+            help="[FEAT_VIS] Export features from specified layers using comma-separated indices (e.g., '0,1,2').",
+        ),
+        auto_cleanup: bool = typer.Option(
+            False, help="Automatically clean export directory if it exists (no prompt)"
+        ),
+        # GLB export options
+        conf_thresh_percentile: float = typer.Option(
+            40.0, help="[GLB] Lower percentile for adaptive confidence threshold"
+        ),
+        num_max_points: int = typer.Option(
+            1_000_000, help="[GLB] Maximum number of points in the point cloud"
+        ),
+        show_cameras: bool = typer.Option(
+            True, help="[GLB] Show camera wireframes in the exported scene"
+        ),
+        # Feat_vis export options
+        feat_vis_fps: int = typer.Option(15, help="[FEAT_VIS] Frame rate for output video"),
+        batch_size: int = typer.Option(
+            None,
+            help="Sub-batch size to limit memory (process images in chunks). Default: all at once",
+        ),
+        mixed_precision: str = typer.Option(
+            "auto",
+            help="Mixed precision mode: auto | fp16 | fp32 | bf16. On MPS, fp16 is opt-in; default fp32.",
+        ),
+        # --- Performance Options ---
+        enable_compile: bool = typer.Option(
+            True, help="Enable torch.compile optimization."
+        ),
+        compile_mode: str = typer.Option(
+            "reduce-overhead", help="Compilation mode: reduce-overhead | max-autotune"
+        ),
+        use_prefetch: bool = typer.Option(
+            True, help="Use async data prefetching."
+        ),
 ):
     """Run depth estimation on video by extracting frames and processing them."""
     # Handle export directory
@@ -649,6 +647,10 @@ def video(
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        # Performance
+        enable_compile=enable_compile,
+        compile_mode=compile_mode,
+        use_prefetch=use_prefetch,
     )
 
 
@@ -659,11 +661,11 @@ def video(
 
 @app.command()
 def backend(
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    device: str = typer.Option("cuda", help="Device to use"),
-    host: str = typer.Option("127.0.0.1", help="Host to bind to"),
-    port: int = typer.Option(8008, help="Port to bind to"),
-    gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery directory path (optional)"),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        device: str = typer.Option("cuda", help="Device to use"),
+        host: str = typer.Option("127.0.0.1", help="Host to bind to"),
+        port: int = typer.Option(8008, help="Port to bind to"),
+        gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery directory path (optional)"),
 ):
     """Start model backend service with integrated gallery."""
     typer.echo("=" * 60)
@@ -705,20 +707,20 @@ def backend(
 
 @app.command()
 def gradio(
-    model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
-    workspace_dir: str = typer.Option(DEFAULT_GRADIO_DIR, help="Workspace directory path"),
-    gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery directory path"),
-    host: str = typer.Option("127.0.0.1", help="Host address to bind to"),
-    port: int = typer.Option(7860, help="Port number to bind to"),
-    share: bool = typer.Option(False, help="Create a public link for the app"),
-    debug: bool = typer.Option(False, help="Enable debug mode"),
-    cache_examples: bool = typer.Option(
-        False, help="Pre-cache all example scenes at startup for faster loading"
-    ),
-    cache_gs_tag: str = typer.Option(
-        "",
-        help="Tag to match scene names for high-res+3DGS caching (e.g., 'dl3dv'). Scenes containing this tag will use high_res and infer_gs=True; others will use low_res only.",
-    ),
+        model_dir: str = typer.Option(DEFAULT_MODEL, help="Model directory path"),
+        workspace_dir: str = typer.Option(DEFAULT_GRADIO_DIR, help="Workspace directory path"),
+        gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery directory path"),
+        host: str = typer.Option("127.0.0.1", help="Host address to bind to"),
+        port: int = typer.Option(7860, help="Port number to bind to"),
+        share: bool = typer.Option(False, help="Create a public link for the app"),
+        debug: bool = typer.Option(False, help="Enable debug mode"),
+        cache_examples: bool = typer.Option(
+            False, help="Pre-cache all example scenes at startup for faster loading"
+        ),
+        cache_gs_tag: str = typer.Option(
+            "",
+            help="Tag to match scene names for high-res+3DGS caching (e.g., 'dl3dv'). Scenes containing this tag will use high_res and infer_gs=True; others will use low_res only.",
+        ),
 ):
     """Launch Depth Anything 3 Gradio interactive web application"""
     from depth_anything_3.app.gradio_app import DepthAnything3App
@@ -785,10 +787,10 @@ def gradio(
 
 @app.command()
 def gallery(
-    gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery root directory"),
-    host: str = typer.Option("127.0.0.1", help="Host address to bind to"),
-    port: int = typer.Option(8007, help="Port number to bind to"),
-    open_browser: bool = typer.Option(False, help="Open browser after launch"),
+        gallery_dir: str = typer.Option(DEFAULT_GALLERY_DIR, help="Gallery root directory"),
+        host: str = typer.Option("127.0.0.1", help="Host address to bind to"),
+        port: int = typer.Option(8007, help="Port number to bind to"),
+        open_browser: bool = typer.Option(False, help="Open browser after launch"),
 ):
     """Launch Depth Anything 3 Gallery server"""
 

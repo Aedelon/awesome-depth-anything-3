@@ -193,7 +193,6 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             compile_mode: str = "reduce-overhead",
             batch_size: int | None = None,
             mixed_precision: bool | str | None = None,
-            quantization: bool = False,
             **kwargs
     ):
         """
@@ -336,11 +335,15 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         global_formats = []
         SAFE_STREAMING_FORMATS = ["mini_npz", "npz", "depth_vis"]
 
+        print(f"[INFO] Export directory: {export_dir}")
         if export_dir:
             for fmt in export_format.split("-"):
+                print(f"[INFO] Checking format {fmt}")
                 if fmt in SAFE_STREAMING_FORMATS:
+                    print(f"[INFO] Enabling async export for {fmt}")
                     streaming_formats.append(fmt)
                 else:
+                    print(f"[INFO] Disabling async export for {fmt}")
                     global_formats.append(fmt)
 
         streaming_fmt_str = "-".join(streaming_formats)
