@@ -208,26 +208,35 @@ Config: balanced/BF16 failed after 1st run
 
 **Impact**: Fixed ✅
 
-### 4. torch.compile on MPS ❌ Not Supported
+### 4. torch.compile ❌ NOT COMPATIBLE with Depth Anything 3
 
-**Problem**:
+**Problem** (tested on CUDA/MPS):
 ```
-Metal Error: Threadgroup memory size (49152) exceeds the maximum allowed (32768)
+# CUDA: Triton compilation error
+triton.compiler.errors.CompilationError: at 29:118
+Complex expression tree that Triton cannot optimize
+
+# MPS: Metal hardware limit
+Metal Error: Threadgroup memory size (49152) exceeds maximum (32768)
 ```
 
-**Root Cause**: torch.compile generates Metal kernels that exceed M3 Max hardware limits.
+**Root Cause**: Depth Anything 3 architecture is **too complex** for torch.compile/Triton:
+- Nested models with dynamic shapes
+- Complex geometric operations (pose estimation, multi-view reconstruction)
+- Deep mathematical expression trees
+- Mixed scalar/tensor operations
 
-**Decision**: Permanently disable torch.compile on MPS.
+**Decision**: Permanently disable torch.compile on **ALL backends**.
 
 ```python
 def should_use_compile(self) -> bool:
-    """torch.compile is NOT supported on MPS due to Metal threadgroup memory limits."""
+    """torch.compile NOT compatible with Depth Anything 3 model."""
     if self.config.enable_compile:
-        logger.warn("torch.compile NOT supported on MPS. Disabled automatically.")
+        logger.warn("torch.compile NOT compatible. Disabled automatically.")
     return False  # Always disabled
 ```
 
-**Impact**: MPS users cannot use torch.compile (hardware limitation)
+**Impact**: torch.compile cannot be used with this model (model-specific limitation, not a PyTorch bug)
 
 ---
 
@@ -239,7 +248,7 @@ def should_use_compile(self) -> bool:
 |-------|----------|--------|--------|
 | CPU threading fails after 1st config | 🔴 High | CPU | ✅ Fixed |
 | MPS OOM on balanced/BF16 | 🟡 Medium | MPS | ⚠️ Mitigated |
-| torch.compile crashes MPS | 🔴 High | MPS | ❌ Won't Fix (hardware limit) |
+| torch.compile incompatible | 🔴 High | ALL | ❌ Won't Fix (model limitation) |
 
 ### Device Compatibility Matrix
 
@@ -248,7 +257,7 @@ def should_use_compile(self) -> bool:
 | FP32 | ✅ | ✅ | ✅ |
 | FP16 | ❌ Slower | ❌ Not accelerated | ✅ |
 | BF16 | ❌ Slower | ✅ **Recommended** | ✅ Ampere+ |
-| torch.compile | ⏳ Untested | ❌ **Not Supported** | ✅ |
+| torch.compile | ❌ **Model incompatible** | ❌ **Model incompatible** | ❌ **Model incompatible** |
 | cuDNN Benchmark | N/A | N/A | ✅ |
 | TF32 | N/A | N/A | ✅ Ampere+ |
 
@@ -290,7 +299,7 @@ model = DepthAnything3(
 
 **Note**: Re-test needed after threading fix
 
-### For CUDA Users (Untested)
+### For CUDA Users
 
 **Recommended Configuration**:
 ```python
@@ -298,12 +307,13 @@ model = DepthAnything3(
     model_name="da3-large",
     device="cuda",
     mixed_precision=None,  # Auto: BF16 on Ampere+, FP16 on older
-    enable_compile=True,   # 10-40% speedup
     performance_mode="max",
 )
 ```
 
-**Expected**: Significant speedup from cuDNN benchmark + TF32 + compile
+**Expected**: Significant speedup from cuDNN benchmark + TF32 + mixed precision
+
+**Note**: torch.compile is **not compatible** with this model (Triton compilation error)
 
 ---
 

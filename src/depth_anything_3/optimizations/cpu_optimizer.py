@@ -89,12 +89,17 @@ class CPUOptimizer(BaseOptimizer):
 
     def should_use_compile(self) -> bool:
         """
-        torch.compile often adds overhead on CPU for small batches.
-        Only enable for very large batch sizes in max performance mode.
+        torch.compile is NOT compatible with Depth Anything 3 model.
+
+        The model is too complex for compilation (see CUDA/MPS errors).
+        Additionally, torch.compile adds significant overhead on CPU.
         """
-        if self.config.performance_mode == "max" and self.config.batch_size and self.config.batch_size >= 16:
-            return self.config.enable_compile
-        return False
+        if self.config.enable_compile:
+            logger.warn(
+                "torch.compile is NOT compatible with Depth Anything 3 model. "
+                "Disabled automatically."
+            )
+        return False  # Always disabled
 
     def get_memory_config(self) -> Dict[str, Any]:
         """CPU memory configuration."""

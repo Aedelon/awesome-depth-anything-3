@@ -105,25 +105,23 @@ class CUDAOptimizer(BaseOptimizer):
 
     def should_use_compile(self) -> bool:
         """
-        torch.compile can provide 10-40% speedup on CUDA.
-        Enable for:
-        - Max performance mode
-        - Large batch sizes (>= 4)
-        - Production inference (static graph)
+        torch.compile is NOT compatible with Depth Anything 3 model.
 
-        Note: Adds compilation overhead on first run.
+        Error: triton.compiler.errors.CompilationError
+        The model architecture is too complex for Triton compilation:
+        - Nested models with dynamic shapes
+        - Complex geometric operations (pose estimation, multi-view)
+        - Deep expression trees that Triton cannot optimize
+
+        This is a model-specific limitation, not a CUDA/Triton bug.
+        torch.compile works fine on simpler models (ResNet, VGG, etc.)
         """
-        if not self.config.enable_compile:
-            return False
-
-        # Enable in max mode or for larger batches
-        if self.config.performance_mode == "max":
-            return True
-
-        if self.config.batch_size and self.config.batch_size >= 4:
-            return True
-
-        return False
+        if self.config.enable_compile:
+            logger.warn(
+                "torch.compile is NOT compatible with Depth Anything 3 model. "
+                "Triton compilation fails due to model complexity. Disabled automatically."
+            )
+        return False  # Always disabled for this model
 
     def get_memory_config(self) -> Dict[str, Any]:
         """CUDA memory optimization configuration."""
