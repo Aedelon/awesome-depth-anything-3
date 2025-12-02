@@ -35,6 +35,7 @@ from depth_anything_3.specs import Prediction
 from depth_anything_3.utils.export import export
 from depth_anything_3.utils.geometry import affine_inverse
 from depth_anything_3.utils.io.input_processor import InputProcessor
+from depth_anything_3.utils.io.gpu_input_processor import GPUInputProcessor
 from depth_anything_3.utils.io.output_processor import OutputProcessor
 from depth_anything_3.utils.logger import logger
 from depth_anything_3.utils.pose_align import align_poses_umeyama
@@ -114,7 +115,16 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         self.model.eval()
 
         # Initialize processors
-        self.input_processor = InputProcessor()
+        # Use GPUInputProcessor for CUDA/MPS devices to enable GPU ops
+        # Note: NVJPEG decoding is specific to CUDA, MPS will use optimized CPU decoding + GPU resize
+        if self.device.type in ("cuda", "mps"):
+            self.input_processor = GPUInputProcessor(device=self.device)
+            decoding_info = "NVJPEG support enabled" if self.device.type == "cuda" else "TorchVision decoding"
+            logger.info(f"Using GPUInputProcessor ({decoding_info} on {self.device})")
+        else:
+            self.input_processor = InputProcessor()
+            logger.info("Using standard InputProcessor (optimized CPU pipeline)")
+        
         self.output_processor = OutputProcessor()
 
     def _auto_detect_device(self) -> torch.device:
@@ -318,12 +328,23 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Preprocess input images using input processor."""
         start_time = time.time()
+        
+        # Determine normalization strategy:
+        # 1. Hybrid (CPU Proc + GPU Device): Skip CPU norm (return uint8), norm on GPU later.
+        # 2. GPU Proc (NVJPEG/Kornia): Perform norm on GPU immediately.
+        # 3. Standard CPU: Perform norm on CPU.
+        
+        perform_norm = True
+        if self.device.type in ("cuda", "mps") and not isinstance(self.input_processor, GPUInputProcessor):
+            perform_norm = False
+        
         imgs_cpu, extrinsics, intrinsics = self.input_processor(
             image,
             extrinsics.copy() if extrinsics is not None else None,
             intrinsics.copy() if intrinsics is not None else None,
             process_res,
             process_res_method,
+            perform_normalization=perform_norm,
         )
         end_time = time.time()
         logger.info(
@@ -342,37 +363,66 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """
         Prepare tensors for model input with optimized device transfer.
-
-        Uses non_blocking=True for async CPU→GPU transfers, which overlaps
-        data transfer with compute when possible.
         """
         device = self._get_model_device()
 
-        # Pin memory for faster CPU→GPU transfer (CUDA only)
-        if device.type == "cuda" and imgs_cpu.device.type == "cpu":
-            imgs_cpu = imgs_cpu.pin_memory()
-
-        # Move images to model device with non-blocking transfer
-        imgs = imgs_cpu.to(device, non_blocking=True)[None].float()
+        # 1. Handle Image Tensor
+        if imgs_cpu.device == device:
+            # Case A: Already on correct device (GPUInputProcessor)
+            # Just ensure batch dimension and correct dtype
+            imgs = imgs_cpu
+            if imgs.dim() == 3:
+                imgs = imgs.unsqueeze(0)
+            if imgs.dtype == torch.uint8:
+                 # Should not happen with GPUInputProcessor default, but safety fallback
+                 imgs = imgs.float() / 255.0
+                 imgs = InputProcessor.normalize_tensor(
+                    imgs, 
+                    mean=[0.485, 0.456, 0.406], 
+                    std=[0.229, 0.224, 0.225]
+                 )
+        else:
+            # Case B & C: Needs transfer from CPU
+            if imgs_cpu.dtype == torch.uint8:
+                # Hybrid mode: uint8 -> GPU -> float -> normalize
+                if device.type == "cuda":
+                    imgs_cpu = imgs_cpu.pin_memory()
+                
+                imgs = imgs_cpu.to(device, non_blocking=True).float() / 255.0
+                imgs = InputProcessor.normalize_tensor(
+                    imgs, 
+                    mean=[0.485, 0.456, 0.406], 
+                    std=[0.229, 0.224, 0.225]
+                )
+                imgs = imgs[None] # Add batch dimension (1, N, 3, H, W)
+            else:
+                # Standard mode: float -> GPU
+                if device.type == "cuda":
+                    imgs_cpu = imgs_cpu.pin_memory()
+                imgs = imgs_cpu.to(device, non_blocking=True)[None].float()
 
         # Convert camera parameters to tensors with non-blocking transfer
         ex_t = (
             extrinsics.pin_memory().to(device, non_blocking=True)[None].float()
-            if extrinsics is not None and device.type == "cuda"
+            if extrinsics is not None and device.type == "cuda" and extrinsics.device.type == "cpu"
             else extrinsics.to(device, non_blocking=True)[None].float()
+            if extrinsics is not None and extrinsics.device != device
+            else extrinsics[None].float()
             if extrinsics is not None
             else None
         )
         in_t = (
             intrinsics.pin_memory().to(device, non_blocking=True)[None].float()
-            if intrinsics is not None and device.type == "cuda"
+            if intrinsics is not None and device.type == "cuda" and intrinsics.device.type == "cpu"
             else intrinsics.to(device, non_blocking=True)[None].float()
+            if intrinsics is not None and intrinsics.device != device
+            else intrinsics[None].float()
             if intrinsics is not None
             else None
         )
 
         return imgs, ex_t, in_t
-
+        
     def _normalize_extrinsics(self, ex_t: torch.Tensor | None) -> torch.Tensor | None:
         """Normalize extrinsics"""
         if ex_t is None:
@@ -447,15 +497,19 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
     def _add_processed_images(self, prediction: Prediction, imgs_cpu: torch.Tensor) -> Prediction:
         """Add processed images to prediction for visualization."""
-        # Convert from (N, 3, H, W) to (N, H, W, 3) and denormalize
+        # Convert from (N, 3, H, W) to (N, H, W, 3)
         processed_imgs = imgs_cpu.permute(0, 2, 3, 1).cpu().numpy()  # (N, H, W, 3)
 
-        # Denormalize from ImageNet normalization
-        mean = np.array([0.485, 0.456, 0.406])
-        std = np.array([0.229, 0.224, 0.225])
-        processed_imgs = processed_imgs * std + mean
-        processed_imgs = np.clip(processed_imgs, 0, 1)
-        processed_imgs = (processed_imgs * 255).astype(np.uint8)
+        if imgs_cpu.dtype == torch.uint8:
+            # Already uint8, no need to denormalize
+            pass
+        else:
+            # Denormalize from ImageNet normalization
+            mean = np.array([0.485, 0.456, 0.406])
+            std = np.array([0.229, 0.224, 0.225])
+            processed_imgs = processed_imgs * std + mean
+            processed_imgs = np.clip(processed_imgs, 0, 1)
+            processed_imgs = (processed_imgs * 255).astype(np.uint8)
 
         prediction.processed_images = processed_imgs
         return prediction

@@ -74,11 +74,14 @@ class InputProcessor:
         print_progress: bool = False,
         sequential: bool | None = None,
         desc: str | None = "Preprocess",
+        perform_normalization: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """
         Returns:
             (tensor, extrinsics_list, intrinsics_list)
             tensor shape: (1, N, 3, H, W)
+            If perform_normalization is False, tensor is uint8 (0-255).
+            If perform_normalization is True, tensor is float32 normalized (ImageNet).
         """
         sequential = self._resolve_sequential(sequential, num_workers)
         exts_list, ixts_list = self._validate_and_pack_meta(image, extrinsics, intrinsics)
@@ -93,6 +96,7 @@ class InputProcessor:
             print_progress=print_progress,
             sequential=sequential,
             desc=desc,
+            perform_normalization=perform_normalization,
         )
 
         proc_imgs, out_sizes, out_ixts, out_exts = self._unpack_results(results)
@@ -113,6 +117,23 @@ class InputProcessor:
             else None
         )
         return (batch_tensor, out_exts, out_ixts)
+
+    @staticmethod
+    def normalize_tensor(tensor: torch.Tensor, mean: torch.Tensor | list, std: torch.Tensor | list) -> torch.Tensor:
+        """Normalize a tensor (C, H, W) or (B, C, H, W) with given mean and std.
+        Expects input tensor to be float32 in range [0, 1].
+        """
+        if isinstance(mean, list):
+            mean = torch.tensor(mean, device=tensor.device, dtype=tensor.dtype).view(-1, 1, 1)
+        if isinstance(std, list):
+            std = torch.tensor(std, device=tensor.device, dtype=tensor.dtype).view(-1, 1, 1)
+        
+        # Ensure dimensions match
+        if tensor.dim() == 4 and mean.dim() == 3:
+             mean = mean.unsqueeze(0)
+             std = std.unsqueeze(0)
+
+        return (tensor - mean) / std
 
     # -----------------------------
     # __call__ helpers
@@ -146,6 +167,7 @@ class InputProcessor:
         print_progress: bool,
         sequential: bool,
         desc: str | None,
+        perform_normalization: bool,
     ):
         results = parallel_execution(
             image,
@@ -158,6 +180,7 @@ class InputProcessor:
             desc=desc,
             process_res=process_res,
             process_res_method=process_res_method,
+            perform_normalization=perform_normalization,
         )
         if not results:
             raise RuntimeError(
@@ -227,6 +250,7 @@ class InputProcessor:
         *,
         process_res: int,
         process_res_method: str,
+        perform_normalization: bool = True,
     ) -> tuple[torch.Tensor, tuple[int, int], np.ndarray | None, np.ndarray | None]:
         # Load & remember original size
         pil_img = self._load_image(img)
@@ -251,8 +275,15 @@ class InputProcessor:
         else:
             raise ValueError(f"Unsupported process_res_method: {process_res_method}")
 
-        # Convert to tensor & normalize
-        img_tensor = self._normalize_image(pil_img)
+        if perform_normalization:
+            # Convert to tensor & normalize
+            img_tensor = self._normalize_image(pil_img)
+        else:
+            # Return uint8 tensor (C, H, W)
+            # numpy array is H, W, C
+            arr = np.array(pil_img)
+            img_tensor = torch.from_numpy(arr).permute(2, 0, 1)
+            
         _, H, W = img_tensor.shape
         assert (W, H) == (w, h), "Tensor size mismatch with PIL image size after processing."
 
@@ -388,117 +419,3 @@ class InputProcessor:
 
 # Backward compatibility alias
 InputAdapter = InputProcessor
-
-
-# ===========================
-# Minimal test runner (parallel execution)
-# ===========================
-if __name__ == "__main__":
-    """
-    Minimal test suite:
-      - Creates pairs of images so batch shapes match.
-      - Tests all four process_res_methods.
-      - Prints fx fy cx cy IN->OUT per image.
-      - Includes cases with K/E provided and with None.
-    """
-
-    def fmt_k_line(K: np.ndarray | None) -> str:
-        if K is None:
-            return "None"
-        fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
-        return f"fx={fx:.3f} fy={fy:.3f} cx={cx:.3f} cy={cy:.3f}"
-
-    def show_result(
-        tag: str,
-        tensor: torch.Tensor,
-        Ks_in: Sequence[np.ndarray | None] | None = None,
-        Ks_out: Sequence[np.ndarray | None] | None = None,
-    ):
-        B, N, C, H, W = tensor.shape
-        print(f"[{tag}] shape={tuple(tensor.shape)}  HxW=({H},{W})  div14=({H%14==0},{W%14==0})")
-        assert H % 14 == 0 and W % 14 == 0, f"{tag}: output size not divisible by 14!"
-        if Ks_in is not None or Ks_out is not None:
-            Ks_in = Ks_in or [None] * N
-            Ks_out = Ks_out or [None] * N
-            for i in range(N):
-                print(f"  K[{i}]: {fmt_k_line(Ks_in[i])}  ->  {fmt_k_line(Ks_out[i])}")
-
-    proc = InputProcessor()
-    process_res = 504
-    methods = ["upper_bound_resize", "upper_bound_crop", "lower_bound_resize", "lower_bound_crop"]
-
-    # Example sizes (two orientations)
-    small_sizes = [(680, 1208), (1208, 680)]
-    large_sizes = [(1208, 680), (680, 1208)]
-
-    def make_K(w, h, fx=1200.0, fy=1100.0):
-        cx, cy = w / 2.0, h / 2.0
-        K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float32)
-        return K
-
-    def run_suite(suite_name: str, sizes: list[tuple[int, int]]):
-        print(f"\n===== {suite_name} =====")
-        for w, h in sizes:
-            img = Image.new("RGB", (w, h), color=(123, 222, 100))
-            batch_imgs = [img, img]
-
-            # intrinsics / extrinsics examples
-            Ks_in = [make_K(w, h), make_K(w, h)]
-            Es_in = [np.eye(4, dtype=np.float32), np.eye(4, dtype=np.float32)]
-
-            for m in methods:
-                tensor, Es_out, Ks_out = proc(
-                    image=batch_imgs,
-                    process_res=process_res,
-                    process_res_method=m,
-                    num_workers=8,
-                    print_progress=False,
-                    intrinsics=Ks_in,  # test with non-None
-                    extrinsics=Es_in,
-                )
-                show_result(f"{suite_name} size=({w},{h}) | {m}", tensor, Ks_in, Ks_out)
-
-            # Also test None path
-            tensor2, Es_out2, Ks_out2 = proc(
-                image=batch_imgs,
-                process_res=process_res,
-                process_res_method="upper_bound_resize",
-                num_workers=8,
-                intrinsics=None,
-                extrinsics=None,
-            )
-            show_result(
-                f"{suite_name} size=({w},{h}) | upper_bound_resize | no K/E",
-                tensor2,
-                None,
-                Ks_out2,
-            )
-
-    run_suite("SMALL", small_sizes)
-    run_suite("LARGE", large_sizes)
-
-    # Extra sanity for 504x376
-    print("\n===== EXTRA sanity for 504x376 =====")
-    img_example = Image.new("RGB", (504, 376), color=(10, 20, 30))
-    Ks_in_extra = [make_K(504, 376, fx=900.0, fy=900.0), make_K(504, 376, fx=900.0, fy=900.0)]
-
-    out_r, _, Ks_out_r = proc(
-        image=[img_example, img_example],
-        process_res=504,
-        process_res_method="upper_bound_resize",
-        num_workers=8,
-        intrinsics=Ks_in_extra,
-    )
-    out_c, _, Ks_out_c = proc(
-        image=[img_example, img_example],
-        process_res=504,
-        process_res_method="upper_bound_crop",
-        num_workers=8,
-        intrinsics=Ks_in_extra,
-    )
-    _, _, _, Hr, Wr = out_r.shape
-    _, _, _, Hc, Wc = out_c.shape
-    print(f"upper_bound_resize -> ({Hr},{Wr})  (rounded to nearest multiple of 14)")
-    show_result("Ks after upper_bound_resize", out_r, Ks_in_extra, Ks_out_r)
-    print(f"upper_bound_crop   -> ({Hc},{Wc})  (floored to multiple of 14)")
-    show_result("Ks after upper_bound_crop", out_c, Ks_in_extra, Ks_out_c)

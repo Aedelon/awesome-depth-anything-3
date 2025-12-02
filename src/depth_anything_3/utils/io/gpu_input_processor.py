@@ -116,6 +116,7 @@ class GPUInputProcessor(InputProcessor):
         *,
         process_res: int,
         process_res_method: str,
+        perform_normalization: bool = True,
     ) -> tuple[torch.Tensor, tuple[int, int], np.ndarray | None, np.ndarray | None]:
         """Process single image with GPU acceleration.
 
@@ -125,16 +126,70 @@ class GPUInputProcessor(InputProcessor):
         if not self._use_gpu:
             # Fallback to CPU
             return super()._process_one(
-                img, extrinsic, intrinsic, process_res=process_res, process_res_method=process_res_method
+                img, 
+                extrinsic, 
+                intrinsic, 
+                process_res=process_res, 
+                process_res_method=process_res_method,
+                perform_normalization=perform_normalization
             )
 
-        # Load image and convert to GPU tensor immediately
-        pil_img = self._load_image(img)
-        orig_w, orig_h = pil_img.size
+        orig_w, orig_h = 0, 0
+        img_tensor = None
 
-        # Convert PIL → torch tensor (CHW float32 [0,1]) and move to GPU
-        img_tensor = self._pil_to_tensor_gpu(pil_img)  # (1, 3, H, W) on GPU
-        _, _, h_tensor, w_tensor = img_tensor.shape
+        # Try GPU/Accelerated decoding if input is a file path and device is CUDA or MPS
+        if isinstance(img, str) and self._device.type in ("cuda", "mps"):
+            import torchvision.io
+            import os
+            
+            try:
+                # Read raw bytes from file
+                with open(img, "rb") as f:
+                    # Read bytes -> numpy array (uint8) -> torch tensor
+                    file_bytes = torch.from_numpy(np.frombuffer(f.read(), dtype=np.uint8))
+                
+                ext = os.path.splitext(img)[1].lower()
+                
+                # 1. CUDA Optimized Path (NVJPEG)
+                if self._device.type == "cuda" and ext in (".jpg", ".jpeg"):
+                    img_tensor = torchvision.io.decode_jpeg(file_bytes, device=self._device)
+                
+                # 2. Generic Path (MPS or non-JPG on CUDA)
+                # decode_image is generally faster than PIL for loading into tensors
+                else:
+                    if ext in (".png", ".jpg", ".jpeg"):
+                         # decode_image supports many formats
+                         # We move to device immediately after decoding
+                         img_tensor = torchvision.io.decode_image(img).to(self._device)
+                    else:
+                         # Fallback for exotic formats
+                         img_tensor = None
+
+                if img_tensor is not None:
+                    # Ensure (1, 3, H, W) float32 [0, 1]
+                    if img_tensor.dim() == 3:
+                        img_tensor = img_tensor.unsqueeze(0) # Add batch dim
+                    
+                    _, c, h, w = img_tensor.shape
+                    orig_h, orig_w = h, w
+                    
+                    # Handle RGBA or Grayscale
+                    if c == 4:
+                        img_tensor = img_tensor[:, :3, :, :]
+                    elif c == 1:
+                        img_tensor = img_tensor.repeat(1, 3, 1, 1)
+                    
+                    img_tensor = img_tensor.float() / 255.0
+                
+            except Exception as e:
+                logger.warn(f"Accelerated decoding failed for {img} on {self._device}, falling back to PIL: {e}")
+                img_tensor = None
+
+        # Fallback to PIL loading if GPU decoding failed or not applicable
+        if img_tensor is None:
+            pil_img = self._load_image(img)
+            orig_w, orig_h = pil_img.size
+            img_tensor = self._pil_to_tensor_gpu(pil_img)
 
         # Boundary resize (on GPU)
         img_tensor = self._resize_image_gpu(img_tensor, process_res, process_res_method)
@@ -153,8 +208,9 @@ class GPUInputProcessor(InputProcessor):
         else:
             raise ValueError(f"Unsupported process_res_method: {process_res_method}")
 
-        # Normalize (on GPU)
-        img_tensor = self._normalize_image_gpu(img_tensor)
+        # Normalize (on GPU) if requested
+        if perform_normalization:
+            img_tensor = self._normalize_image_gpu(img_tensor)
 
         # Remove batch dimension: (1, 3, H, W) → (3, H, W)
         img_tensor = img_tensor.squeeze(0)
@@ -333,66 +389,3 @@ class GPUInputProcessor(InputProcessor):
 
 # Backward compatibility alias
 GPUInputAdapter = GPUInputProcessor
-
-
-# ===========================
-# Minimal test runner
-# ===========================
-if __name__ == "__main__":
-    """Minimal test comparing CPU vs GPU preprocessing."""
-
-    def test_gpu_vs_cpu():
-        print("===== GPU vs CPU Preprocessing Test =====\n")
-
-        # Check GPU availability
-        if torch.cuda.is_available():
-            device_name = "cuda"
-        elif torch.backends.mps.is_available():
-            device_name = "mps"
-        else:
-            device_name = "cpu"
-            print("WARNING: No GPU available, testing with CPU backend only\n")
-
-        # Create processors
-        cpu_proc = InputProcessor()
-        gpu_proc = GPUInputProcessor(device=device_name)
-
-        # Test image
-        img = Image.new("RGB", (640, 480), color=(100, 150, 200))
-        batch_imgs = [img, img]
-
-        # Process with CPU
-        print("Processing with CPU...")
-        cpu_tensor, _, _ = cpu_proc(
-            image=batch_imgs,
-            process_res=504,
-            process_res_method="upper_bound_resize",
-            num_workers=1,
-        )
-        print(f"CPU output: {cpu_tensor.shape}, device={cpu_tensor.device}")
-
-        # Process with GPU
-        print("Processing with GPU...")
-        gpu_tensor, _, _ = gpu_proc(
-            image=batch_imgs,
-            process_res=504,
-            process_res_method="upper_bound_resize",
-            num_workers=1,
-        )
-        print(f"GPU output: {gpu_tensor.shape}, device={gpu_tensor.device}")
-
-        # Compare results (move GPU tensor to CPU for comparison)
-        gpu_tensor_cpu = gpu_tensor.cpu()
-        max_diff = torch.abs(cpu_tensor - gpu_tensor_cpu).max().item()
-        mean_diff = torch.abs(cpu_tensor - gpu_tensor_cpu).mean().item()
-
-        print(f"\nDifference between CPU and GPU:")
-        print(f"  Max absolute diff: {max_diff:.6f}")
-        print(f"  Mean absolute diff: {mean_diff:.6f}")
-
-        if max_diff < 1e-4:
-            print("✓ Results match (within tolerance)")
-        else:
-            print("⚠ Results differ significantly")
-
-    test_gpu_vs_cpu()
