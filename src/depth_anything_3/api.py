@@ -37,9 +37,10 @@ from depth_anything_3.utils.io.input_processor import InputProcessor
 from depth_anything_3.utils.io.output_processor import OutputProcessor
 from depth_anything_3.utils.logger import logger
 from depth_anything_3.utils.pose_align import align_poses_umeyama
+from depth_anything_3.optimizations import get_optimizer, OptimizationConfig
 
-torch.backends.cudnn.benchmark = False
-# logger.info("CUDNN Benchmark Disabled")
+# NOTE: cudnn.benchmark is now managed by device-specific optimizers
+# torch.backends.cudnn.benchmark = False  # REMOVED - set by optimizer
 
 SAFETENSORS_NAME = "model.safetensors"
 CONFIG_NAME = "config.json"
@@ -72,14 +73,34 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
     _commit_hash: str | None = None  # Set by mixin when loading from Hub
 
-    def __init__(self, model_name: str = "da3-large", **kwargs):
+    def __init__(
+        self,
+        model_name: str = "da3-large",
+        device: str | torch.device | None = None,
+        mixed_precision: bool | str | None = None,
+        enable_compile: bool = False,
+        performance_mode: str = "balanced",
+        **kwargs
+    ):
         """
-        Initialize DepthAnything3 with specified preset.
+        Initialize DepthAnything3 with specified preset and optimizations.
 
         Args:
-        model_name: The name of the model preset to use.
-                    Examples: 'da3-giant', 'da3-large', 'da3metric-large', 'da3nested-giant-large'.
-        **kwargs: Additional keyword arguments (currently unused).
+            model_name: The name of the model preset to use.
+                Examples: 'da3-giant', 'da3-large', 'da3metric-large', 'da3nested-giant-large'.
+            device: Target device ('cpu', 'cuda', 'mps', or torch.device). If None, auto-detects.
+            mixed_precision: Mixed precision mode:
+                - False: FP32 only
+                - "float16": FP16 mixed precision
+                - "bfloat16": BF16 mixed precision
+                - None: Auto-detect optimal precision for device (default)
+            enable_compile: Enable torch.compile for faster inference (PyTorch 2.0+).
+                Adds compilation overhead on first run but speeds up subsequent calls.
+            performance_mode: Performance/compatibility tradeoff:
+                - "minimal": Conservative, maximum compatibility
+                - "balanced": Good performance with stability (default)
+                - "max": Maximum performance, may reduce compatibility
+            **kwargs: Additional keyword arguments (currently unused).
         """
         super().__init__()
         self.model_name = model_name
@@ -93,8 +114,36 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         self.input_processor = InputProcessor()
         self.output_processor = OutputProcessor()
 
-        # Device management (set by user)
-        self.device = None
+        # Device management
+        if device is None:
+            from depth_anything_3.optimizations import get_default_device
+            self.device = get_default_device()
+        else:
+            self.device = torch.device(device) if isinstance(device, str) else device
+
+        # Create optimization config
+        opt_config = OptimizationConfig(
+            mixed_precision=mixed_precision,
+            enable_compile=enable_compile,
+            performance_mode=performance_mode,
+        )
+
+        # Get device-specific optimizer
+        self.optimizer = get_optimizer(self.device, config=opt_config, performance_mode=performance_mode)
+
+        # Apply platform-specific optimizations
+        self.optimizer.apply()
+        logger.info(f"Device optimizer applied: {self.optimizer}")
+
+        # Move model to device
+        self.model = self.model.to(self.device)
+
+        # Apply torch.compile if enabled
+        if self.optimizer.should_use_compile() and enable_compile:
+            logger.info("Compiling model with torch.compile...")
+            compile_config = self.optimizer.get_compile_config() if hasattr(self.optimizer, 'get_compile_config') else {}
+            self.model = torch.compile(self.model, **compile_config)
+            logger.info("Model compilation enabled")
 
     @torch.inference_mode()
     def forward(
@@ -122,13 +171,22 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         Returns:
             Dictionary containing model predictions
         """
-        # Determine optimal autocast dtype
-        autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-        with torch.no_grad():
-            with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+        # Use device-specific optimizer context (handles mixed precision automatically)
+        dtype = self.optimizer.get_mixed_precision_dtype()
+
+        if dtype is None:
+            # FP32 mode - no autocast
+            with torch.no_grad():
                 return self.model(
                     image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
                 )
+        else:
+            # Mixed precision mode
+            with torch.no_grad():
+                with torch.autocast(device_type=image.device.type, dtype=dtype):
+                    return self.model(
+                        image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+                    )
 
     def inference(
         self,
