@@ -272,10 +272,15 @@ def run_validation_suite(
 
                     all_results.append(result)
 
-                    # Clear CUDA cache between runs
+                    # Clear device cache between runs
                     if device == "cuda":
                         torch.cuda.empty_cache()
                         torch.cuda.reset_peak_memory_stats()
+                    elif device == "mps":
+                        # Clear MPS cache to prevent OOM from fragmentation
+                        torch.mps.empty_cache()
+                        import gc
+                        gc.collect()
 
     # Save results
     output_path = Path(output_file)

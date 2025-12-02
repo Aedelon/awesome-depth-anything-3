@@ -35,9 +35,10 @@ class MPSOptimizer(BaseOptimizer):
 
     def apply_platform_settings(self) -> None:
         """Apply MPS-specific PyTorch settings."""
-        # Set memory fraction (leave headroom for system)
+        # Set memory fraction (leave headroom for system and fragmentation)
+        # 0.7 instead of 0.8 to prevent OOM from memory fragmentation
         if hasattr(torch.mps, "set_per_process_memory_fraction"):
-            torch.mps.set_per_process_memory_fraction(0.8)
+            torch.mps.set_per_process_memory_fraction(0.7)
 
         # Set matmul precision
         torch.set_float32_matmul_precision("medium")
@@ -97,16 +98,17 @@ class MPSOptimizer(BaseOptimizer):
 
     def should_use_compile(self) -> bool:
         """
-        torch.compile on MPS is experimental and can add overhead.
-        Only enable in max performance mode with explicit user request.
+        torch.compile on MPS is NOT supported due to Metal threadgroup memory limitations.
+
+        Error: "Threadgroup memory size (49152) exceeds the maximum allowed (32768)"
+        This is a hardware limitation of Metal on Apple Silicon.
         """
-        if self.config.performance_mode == "max" and self.config.enable_compile:
+        if self.config.enable_compile:
             logger.warn(
-                "torch.compile on MPS is experimental. "
-                "May add overhead or cause instability."
+                "torch.compile is NOT supported on MPS due to Metal threadgroup memory limits. "
+                "Compile disabled automatically."
             )
-            return True
-        return False
+        return False  # Always disabled on MPS
 
     def get_memory_config(self) -> Dict[str, Any]:
         """MPS memory configuration (Unified Memory architecture)."""

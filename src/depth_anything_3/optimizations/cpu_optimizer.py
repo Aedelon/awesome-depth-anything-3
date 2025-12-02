@@ -18,6 +18,11 @@ from depth_anything_3.optimizations.base_optimizer import BaseOptimizer, Optimiz
 from depth_anything_3.utils.logger import logger
 
 
+# Global flag to track if CPU threading has been configured
+# torch.set_num_interop_threads() can only be called once
+_CPU_THREADING_CONFIGURED = False
+
+
 class CPUOptimizer(BaseOptimizer):
     """Optimizer for CPU inference."""
 
@@ -36,16 +41,23 @@ class CPUOptimizer(BaseOptimizer):
 
     def apply_platform_settings(self) -> None:
         """Apply CPU-specific PyTorch settings."""
+        global _CPU_THREADING_CONFIGURED
+
         num_cores = os.cpu_count() or 4
 
-        # Threading optimization
-        torch.set_num_threads(num_cores)
-        torch.set_num_interop_threads(min(4, num_cores))
+        # Threading optimization (can only be set once)
+        if not _CPU_THREADING_CONFIGURED:
+            torch.set_num_threads(num_cores)
+            torch.set_num_interop_threads(min(4, num_cores))
+            _CPU_THREADING_CONFIGURED = True
+            logger.info(f"CPU threading configured: {num_cores} threads, {min(4, num_cores)} interop threads")
+        else:
+            logger.debug(f"CPU threading already configured, skipping")
 
         # Enable MKLDNN/oneDNN for CPU inference
         if hasattr(torch.backends, "mkldnn"):
             torch.backends.mkldnn.enabled = True
-            logger.info(f"CPU Optimizer: MKLDNN enabled, {num_cores} threads")
+            logger.debug(f"CPU Optimizer: MKLDNN enabled")
 
         # Disable CUDNN (not applicable for CPU)
         torch.backends.cudnn.enabled = False
