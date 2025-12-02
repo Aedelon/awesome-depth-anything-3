@@ -39,6 +39,12 @@ from depth_anything_3.utils.io.gpu_input_processor import GPUInputProcessor
 from depth_anything_3.utils.io.output_processor import OutputProcessor
 from depth_anything_3.utils.logger import logger
 from depth_anything_3.utils.pose_align import align_poses_umeyama
+from depth_anything_3.utils.adaptive_batching import (
+    AdaptiveBatchSizeCalculator,
+    AdaptiveBatchConfig,
+    adaptive_batch_iterator,
+    estimate_max_batch_size,
+)
 
 torch.backends.cudnn.benchmark = False
 # logger.info("CUDNN Benchmark Disabled")
@@ -554,3 +560,151 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             return buffer.device
 
         raise ValueError("No tensor found in model")
+
+    # =========================================================================
+    # Adaptive Batching Methods
+    # =========================================================================
+
+    def batch_inference(
+        self,
+        images: list[np.ndarray | Image.Image | str],
+        process_res: int = 504,
+        batch_size: int | str = "auto",
+        max_batch_size: int = 64,
+        target_memory_utilization: float = 0.85,
+        progress_callback: callable | None = None,
+    ) -> list[Prediction]:
+        """
+        Run inference on multiple images with adaptive batching.
+
+        This method automatically determines optimal batch sizes based on
+        available GPU memory, maximizing throughput while preventing OOM errors.
+
+        Args:
+            images: List of input images (numpy arrays, PIL Images, or file paths)
+            process_res: Processing resolution (default: 504)
+            batch_size: Batch size or "auto" for adaptive batching (default: "auto")
+            max_batch_size: Maximum batch size when using adaptive batching (default: 64)
+            target_memory_utilization: Target GPU memory usage 0.0-1.0 (default: 0.85)
+            progress_callback: Optional callback(processed, total) for progress updates
+
+        Returns:
+            List of Prediction objects, one per batch
+
+        Example:
+            >>> model = DepthAnything3(model_name="da3-large")
+            >>> images = ["img1.jpg", "img2.jpg", ..., "img100.jpg"]
+            >>>
+            >>> # Adaptive batching (recommended)
+            >>> results = model.batch_inference(images, process_res=518)
+            >>>
+            >>> # Fixed batch size
+            >>> results = model.batch_inference(images, batch_size=4)
+            >>>
+            >>> # With progress callback
+            >>> def on_progress(done, total):
+            ...     print(f"Processed {done}/{total}")
+            >>> results = model.batch_inference(images, progress_callback=on_progress)
+        """
+        import gc
+
+        num_images = len(images)
+        if num_images == 0:
+            return []
+
+        results: list[Prediction] = []
+
+        # Determine batch size
+        if batch_size == "auto":
+            config = AdaptiveBatchConfig(
+                max_batch_size=max_batch_size,
+                target_memory_utilization=target_memory_utilization,
+            )
+            calculator = AdaptiveBatchSizeCalculator(
+                model_name=self.model_name,
+                device=self.device,
+                config=config,
+            )
+
+            for batch_info in adaptive_batch_iterator(images, calculator, process_res):
+                # Run inference on this batch
+                prediction = self.inference(
+                    image=batch_info.items,
+                    process_res=process_res,
+                )
+                results.append(prediction)
+
+                # Progress callback
+                if progress_callback:
+                    progress_callback(batch_info.end_idx, num_images)
+
+                # Memory cleanup between batches
+                if not batch_info.is_last:
+                    gc.collect()
+                    if self.device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    elif self.device.type == "mps":
+                        torch.mps.empty_cache()
+
+                # Update profiling data for better estimates
+                if calculator.config.enable_profiling and self.device.type == "cuda":
+                    memory_used = torch.cuda.max_memory_allocated(self.device) / (1024 * 1024)
+                    calculator.update_from_profiling(
+                        batch_size=batch_info.batch_size,
+                        memory_used_mb=memory_used,
+                        process_res=process_res,
+                    )
+                    torch.cuda.reset_peak_memory_stats(self.device)
+
+        else:
+            # Fixed batch size
+            fixed_batch_size = int(batch_size)
+            for i in range(0, num_images, fixed_batch_size):
+                end_idx = min(i + fixed_batch_size, num_images)
+                batch_images = images[i:end_idx]
+
+                prediction = self.inference(
+                    image=batch_images,
+                    process_res=process_res,
+                )
+                results.append(prediction)
+
+                if progress_callback:
+                    progress_callback(end_idx, num_images)
+
+                # Memory cleanup
+                if end_idx < num_images:
+                    gc.collect()
+                    if self.device.type == "cuda":
+                        torch.cuda.empty_cache()
+                    elif self.device.type == "mps":
+                        torch.mps.empty_cache()
+
+        return results
+
+    def get_optimal_batch_size(
+        self,
+        process_res: int = 504,
+        target_utilization: float = 0.85,
+    ) -> int:
+        """
+        Get the optimal batch size for current GPU memory state.
+
+        Args:
+            process_res: Processing resolution (default: 504)
+            target_utilization: Target GPU memory usage 0.0-1.0 (default: 0.85)
+
+        Returns:
+            Recommended batch size
+
+        Example:
+            >>> model = DepthAnything3(model_name="da3-large")
+            >>> batch_size = model.get_optimal_batch_size(process_res=518)
+            >>> print(f"Optimal batch size: {batch_size}")
+        """
+        return estimate_max_batch_size(
+            model_name=self.model_name,
+            device=self.device,
+            process_res=process_res,
+            target_utilization=target_utilization,
+        )
