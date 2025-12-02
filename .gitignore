@@ -11,7 +11,7 @@ dist/
 .gradio/
 
 # Test/coverage
-.coverage
+.coveragereset tou
 .pytest_cache/
 htmlcov/
 .tox/
@@ -34,4 +34,7 @@ input_images*/
 src/debug_main.py
 temp*.png
 /outputs
-.idea
+.idea/
+uv.lock
+
+.venv/

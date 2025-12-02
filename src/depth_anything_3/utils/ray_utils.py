@@ -14,7 +14,8 @@
 
 import torch
 from einops import repeat
-from .geometry import unproject_depth
+import torch.nn.functional as F # Added this import
+from .geometry import unproject
 
 
 def compute_optimal_rotation_intrinsics_batch(
@@ -231,7 +232,6 @@ def find_homography_least_squares_weighted_torch_batch(
     H = H / H[:, 2:3, 2:3]
     return H
 
-
 def ransac_find_homography_weighted_fast(
     src_pts,
     dst_pts,
@@ -260,8 +260,7 @@ def ransac_find_homography_weighted_fast(
             [torch.randperm(n_sample, device=device)[:num_sample_for_ransac] for _ in range(n_iter)],
             dim=0,
         )  # (n_iter, num_sample_for_ransac)
-    # 2. Generate all sampling groups at once
-    # shape: (n_iter, num_sample_for_ransac)
+    
     rand_idx = candidate_idx[rand_sample_iters_idx]  # (n_iter, num_sample_for_ransac)
     # 3. Construct batch input
     src_pts_batch = src_pts[rand_idx]  # (n_iter, num_sample_for_ransac, 2)
@@ -309,7 +308,6 @@ def ransac_find_homography_weighted_fast(
     )
     return H_inlier
 
-
 def ransac_find_homography_weighted_fast_batch(
     src_pts,  # (B, N, 3)
     dst_pts,  # (B, N, 2)
@@ -353,7 +351,7 @@ def ransac_find_homography_weighted_fast_batch(
     rand_idx = candidate_idx[:, rand_sample_iters_idx]  # (B, n_iter, num_sample_for_ransac)
 
     # 3. Construct batch input
-    # Indexing method below: (B, n_iter, num_sample_for_ransac, ...)
+    # Indexing method below: (B, n_iter, num_sample_for_ransac, ...) (B, n_iter, num_sample_for_ransac)
     b_idx = torch.arange(B, device=device).view(B, 1, 1).expand(B, n_iter, num_sample_for_ransac)
     src_pts_batch = src_pts[b_idx, rand_idx]  # (B, n_iter, num_sample_for_ransac, 2)
     dst_pts_batch = dst_pts[b_idx, rand_idx]  # (B, n_iter, num_sample_for_ransac, 2)
@@ -362,10 +360,10 @@ def ransac_find_homography_weighted_fast_batch(
     # 4. Batch fit Homography
     # Need to implement batch version that supports (B, n_iter, num_sample_for_ransac, ...) input
     # Output H_batch: (B, n_iter, 3, 3)
-    cB, cN = src_pts_batch.shape[:2]
+    cB, cN, cM, _ = src_pts_batch.shape
     H_batch = find_homography_least_squares_weighted_torch_batch(
         src_pts_batch.flatten(0, 1), dst_pts_batch.flatten(0, 1), confident_weight_batch.flatten(0, 1)
-    )  # (B, n_iter, 3, 3)
+    )  # (B*n_iter, 3, 3)
     H_batch = H_batch.unflatten(0, (cB, cN))
 
     # 5. Batch evaluate inliers for all H
@@ -456,13 +454,11 @@ def camray_to_caminfo(camray, confidence=None, reproj_threshold=0.2, training=Fa
     cam_plane_depth = torch.ones(
         B, S, num_patches_y, num_patches_x, 1, dtype=camray.dtype, device=camray.device
     )
-    I_cam_plane_unproj = unproject_depth(
-        cam_plane_depth,
-        I_K,
-        c2w=None,
-        ixt_normalized=True,
-        num_patches_x=num_patches_x,
-        num_patches_y=num_patches_y,
+    I_cam_plane_unproj = unproject(
+        coordinates=cam_plane_depth.squeeze(-1), # Pass coordinates only
+        z=cam_plane_depth.squeeze(-1), # Pass z values
+        intrinsics=I_K,
+        # Removed c2w, ixt_normalized, num_patches_x, num_patches_y as they are not expected by unproject_depth
     )  # (B, S, num_patches_y, num_patches_x, 3)
 
     camray = camray.flatten(0, 1).flatten(1, 2)  # (B*S, num_patches_y*num_patches_x, 6)
