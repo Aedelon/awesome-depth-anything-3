@@ -523,6 +523,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "flash-attn", marker = "sys_platform == 'linux'" },
     { name = "gradio" },
     { name = "gsplat", marker = "sys_platform != 'darwin'" },
     { name = "pillow" },
@@ -531,17 +532,21 @@ app = [
     { name = "gradio" },
     { name = "pillow" },
 ]
+flash = [
+    { name = "flash-attn", marker = "sys_platform == 'linux'" },
+]
 gs = [
     { name = "gsplat", marker = "sys_platform != 'darwin'" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "depth-anything-3", extras = ["app", "gs"], marker = "extra == 'all'" },
+    { name = "depth-anything-3", extras = ["app", "gs", "flash"], marker = "extra == 'all'" },
     { name = "e3nn" },
     { name = "einops" },
     { name = "evo" },
     { name = "fastapi" },
+    { name = "flash-attn", marker = "sys_platform == 'linux' and extra == 'flash'", specifier = ">=2.5.0" },
     { name = "gradio", marker = "extra == 'app'", specifier = ">=5" },
     { name = "gsplat", marker = "sys_platform != 'darwin' and extra == 'gs'", specifier = ">=1.0.0" },
     { name = "huggingface-hub" },
@@ -569,7 +574,7 @@ requires-dist = [
     { name = "uvicorn" },
     { name = "xformers", marker = "sys_platform != 'darwin'" },
 ]
-provides-extras = ["app", "gs", "all"]
+provides-extras = ["app", "gs", "flash", "all"]
 
 [[package]]
 name = "distlib"
@@ -684,6 +689,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/58/46/0028a82567109b5ef
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/91/7216b27286936c16f5b4d0c530087e4a54eead683e6b0b73dd0c64844af6/filelock-3.20.0-py3-none-any.whl", hash = "sha256:339b4732ffda5cd79b13f4e2711a31b0365ce445d95d243bb996273d072546a2", size = 16054, upload-time = "2025-10-08T18:03:48.35Z" },
 ]
+
+[[package]]
+name = "flash-attn"
+version = "2.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops", marker = "sys_platform != 'darwin'" },
+    { name = "torch", marker = "sys_platform != 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/b2/8d76c41ad7974ee264754709c22963447f7f8134613fd9ce80984ed0dab7/flash_attn-2.8.3.tar.gz", hash = "sha256:1e71dd64a9e0280e0447b8a0c2541bad4bf6ac65bdeaa2f90e51a9e57de0370d", size = 8447812, upload-time = "2025-08-15T08:28:12.911Z" }
 
 [[package]]
 name = "flask"
@@ -821,11 +836,11 @@ name = "gsplat"
 version = "1.5.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jaxtyping" },
-    { name = "ninja" },
-    { name = "numpy" },
-    { name = "rich" },
-    { name = "torch" },
+    { name = "jaxtyping", marker = "sys_platform != 'darwin'" },
+    { name = "ninja", marker = "sys_platform != 'darwin'" },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
+    { name = "rich", marker = "sys_platform != 'darwin'" },
+    { name = "torch", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6d/94/a0963873708223385ac926112dc3e40ab08297784ac53d95309b4cb5a801/gsplat-1.5.3.tar.gz", hash = "sha256:343f080c470e891ba3c697c03bdf0952cb982d1d535fdc24adb23c2cb4fba906", size = 4743603, upload-time = "2025-07-04T16:50:42.899Z" }
 wheels = [
@@ -983,7 +998,7 @@ name = "jaxtyping"
 version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "wadler-lindig" },
+    { name = "wadler-lindig", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e4/1e/827f9e17b26e21c7d4d934fd1a214284ad05663afedd37c21ed105db366b/jaxtyping-0.3.3.tar.gz", hash = "sha256:8003cfd16ba2ad9b47fdda1d982a575299a81ddfc7997ad0e917c87a0897ea86", size = 45484, upload-time = "2025-10-01T13:46:51.933Z" }
 wheels = [
@@ -3123,8 +3138,8 @@ name = "xformers"
 version = "0.0.33.post1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
-    { name = "torch" },
+    { name = "numpy", marker = "sys_platform != 'darwin'" },
+    { name = "torch", marker = "sys_platform != 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6f/c1/cd0d6b89da38d8aa174e8eabf29530f8871daf53b886ec6b680ef9d3e71f/xformers-0.0.33.post1.tar.gz", hash = "sha256:e555258249b514ba117b3403523fe0bd7d3e92e930575f0e0dbf5f7db5b42677", size = 14784437, upload-time = "2025-11-13T20:16:14.793Z" }
 wheels = [

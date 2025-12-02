@@ -47,7 +47,13 @@ app = ["gradio>=5", "pillow>=9.0"] # requires that python3>=3.10
 gs = [
     "gsplat>=1.0.0; platform_system!='Darwin'"
 ]
-all = ["depth-anything-3[app,gs]"]
+flash = [
+    # Flash Attention v2/v3 for 2-3x speedup on attention layers (CUDA only)
+    # Requires: CUDA toolkit, PyTorch >= 2.2, ninja
+    # Install: pip install flash-attn --no-build-isolation
+    "flash-attn>=2.5.0; platform_system=='Linux'"
+]
+all = ["depth-anything-3[app,gs,flash]"]
 
 
 [project.scripts]
