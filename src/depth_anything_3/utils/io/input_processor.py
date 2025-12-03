@@ -21,7 +21,6 @@ In addition, it parallelizes per-image preprocessing using the provided `paralle
 
 from __future__ import annotations
 
-from typing import Sequence
 import cv2
 import numpy as np
 import torch
@@ -127,7 +126,7 @@ class InputProcessor:
             mean = torch.tensor(mean, device=tensor.device, dtype=tensor.dtype).view(-1, 1, 1)
         if isinstance(std, list):
             std = torch.tensor(std, device=tensor.device, dtype=tensor.dtype).view(-1, 1, 1)
-        
+
         # Ensure dimensions match
         if tensor.dim() == 4 and mean.dim() == 3:
              mean = mean.unsqueeze(0)
@@ -283,7 +282,7 @@ class InputProcessor:
             # numpy array is H, W, C
             arr = np.array(pil_img)
             img_tensor = torch.from_numpy(arr).permute(2, 0, 1)
-            
+
         _, H, W = img_tensor.shape
         assert (W, H) == (w, h), "Tensor size mismatch with PIL image size after processing."
 

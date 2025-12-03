@@ -24,8 +24,8 @@ FLASH_ATTN_AVAILABLE = False
 FLASH_ATTN_VERSION = None
 
 try:
-    from flash_attn import flash_attn_func
     from flash_attn import __version__ as flash_attn_version
+    from flash_attn import flash_attn_func
 
     FLASH_ATTN_AVAILABLE = True
     FLASH_ATTN_VERSION = flash_attn_version

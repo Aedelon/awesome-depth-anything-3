@@ -25,7 +25,9 @@ import os
 import shutil
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
+
 
 def create_depth_visualization(depth: np.ndarray) -> Optional[np.ndarray]:
     """
@@ -148,8 +150,9 @@ def _extract_video_thumbnail(video_path: str) -> str:
     Returns:
         Path to the thumbnail image (or video path if extraction fails)
     """
-    import cv2
     import tempfile
+
+    import cv2
 
     try:
         cap = cv2.VideoCapture(video_path)

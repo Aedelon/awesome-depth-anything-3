@@ -20,6 +20,7 @@ Handles different types of inputs (image, images, colmap, video)
 import glob
 import os
 from typing import List, Tuple
+
 import cv2
 import numpy as np
 import typer

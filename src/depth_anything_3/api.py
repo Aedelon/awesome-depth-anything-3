@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import time
 from typing import Optional, Sequence
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -32,19 +33,19 @@ from depth_anything_3.cache import get_model_cache
 from depth_anything_3.cfg import create_object, load_config
 from depth_anything_3.registry import MODEL_REGISTRY
 from depth_anything_3.specs import Prediction
-from depth_anything_3.utils.export import export
-from depth_anything_3.utils.geometry import affine_inverse
-from depth_anything_3.utils.io.input_processor import InputProcessor
-from depth_anything_3.utils.io.gpu_input_processor import GPUInputProcessor
-from depth_anything_3.utils.io.output_processor import OutputProcessor
-from depth_anything_3.utils.logger import logger
-from depth_anything_3.utils.pose_align import align_poses_umeyama
 from depth_anything_3.utils.adaptive_batching import (
-    AdaptiveBatchSizeCalculator,
     AdaptiveBatchConfig,
+    AdaptiveBatchSizeCalculator,
     adaptive_batch_iterator,
     estimate_max_batch_size,
 )
+from depth_anything_3.utils.export import export
+from depth_anything_3.utils.geometry import affine_inverse
+from depth_anything_3.utils.io.gpu_input_processor import GPUInputProcessor
+from depth_anything_3.utils.io.input_processor import InputProcessor
+from depth_anything_3.utils.io.output_processor import OutputProcessor
+from depth_anything_3.utils.logger import logger
+from depth_anything_3.utils.pose_align import align_poses_umeyama
 
 torch.backends.cudnn.benchmark = False
 # logger.info("CUDNN Benchmark Disabled")
@@ -130,7 +131,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         else:
             self.input_processor = InputProcessor()
             logger.info("Using standard InputProcessor (optimized CPU pipeline)")
-        
+
         self.output_processor = OutputProcessor()
 
     def _auto_detect_device(self) -> torch.device:
@@ -341,16 +342,16 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
         """Preprocess input images using input processor."""
         start_time = time.time()
-        
+
         # Determine normalization strategy:
         # 1. Hybrid (CPU Proc + GPU Device): Skip CPU norm (return uint8), norm on GPU later.
         # 2. GPU Proc (NVJPEG/Kornia): Perform norm on GPU immediately.
         # 3. Standard CPU: Perform norm on CPU.
-        
+
         perform_norm = True
         if self.device.type in ("cuda", "mps") and not isinstance(self.input_processor, GPUInputProcessor):
             perform_norm = False
-        
+
         imgs_cpu, extrinsics, intrinsics = self.input_processor(
             image,
             extrinsics.copy() if extrinsics is not None else None,
@@ -397,8 +398,8 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
                  # Should not happen with GPUInputProcessor default, but safety fallback
                  imgs = imgs.float() / 255.0
                  imgs = InputProcessor.normalize_tensor(
-                    imgs, 
-                    mean=[0.485, 0.456, 0.406], 
+                    imgs,
+                    mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225]
                  )
         else:
@@ -407,11 +408,11 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
                 # Hybrid mode: uint8 -> GPU -> float -> normalize
                 if device.type == "cuda":
                     imgs_cpu = imgs_cpu.pin_memory()
-                
+
                 imgs = imgs_cpu.to(device, non_blocking=True).float() / 255.0
                 imgs = InputProcessor.normalize_tensor(
-                    imgs, 
-                    mean=[0.485, 0.456, 0.406], 
+                    imgs,
+                    mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225]
                 )
                 imgs = imgs[None] # Add batch dimension (1, N, 3, H, W)
@@ -442,7 +443,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         )
 
         return imgs, ex_t, in_t
-        
+
     def _normalize_extrinsics(self, ex_t: torch.Tensor | None) -> torch.Tensor | None:
         """Normalize extrinsics"""
         if ex_t is None:

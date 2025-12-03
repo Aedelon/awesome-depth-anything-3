@@ -14,6 +14,7 @@
 
 import torch
 from einops import repeat
+
 from .geometry import unproject_depth
 
 
@@ -50,7 +51,7 @@ def compute_optimal_rotation_intrinsics_batch(
     rays_origin = rays_origin[:, :, :2]
     rays_target = rays_target[:, :, :2]
     assert weights is not None, "weights must be provided"
-    weights[~z_mask] = 0 
+    weights[~z_mask] = 0
 
     A_list = []
     max_chunk_size = 2
@@ -85,7 +86,7 @@ def compute_optimal_rotation_intrinsics_batch(
         R_list.append(R)
         f_list.append(f)
         pp_list.append(pp)
-        
+
     R = torch.stack(R_list)
     f = torch.stack(f_list)
     pp = torch.stack(pp_list)
@@ -349,7 +350,7 @@ def ransac_find_homography_weighted_fast_batch(
             [torch.randperm(n_sample, device=device)[:num_sample_for_ransac] for _ in range(n_iter)],
             dim=0,
         )  # (n_iter, num_sample_for_ransac)
-    
+
     rand_idx = candidate_idx[:, rand_sample_iters_idx]  # (B, n_iter, num_sample_for_ransac)
 
     # 3. Construct batch input
@@ -470,12 +471,12 @@ def camray_to_caminfo(camray, confidence=None, reproj_threshold=0.2, training=Fa
         1, 2
     )  # (B*S, num_patches_y*num_patches_x, 3)
     confidence = confidence.flatten(0, 1).flatten(1, 2)  # (B*S, num_patches_y*num_patches_x)
-    
+
     # Compute optimal rotation to align rays
     N = camray.shape[-2]
     device = camray.device
     n_iter, num_sample_for_ransac, n_sample, rand_sample_iters_idx = get_params_for_ransac(N, device)
-    
+
     # Use batch processing (confidence is guaranteed to be not None at this point)
     if training:
         camray = camray.clone().detach()

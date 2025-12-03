@@ -15,6 +15,7 @@
 import math
 from math import isqrt
 from typing import Literal, Optional
+
 import torch
 from einops import rearrange, repeat
 from tqdm import tqdm

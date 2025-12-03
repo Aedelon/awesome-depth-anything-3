@@ -14,6 +14,7 @@
 # limitations under the License.
 from types import SimpleNamespace
 from typing import Optional
+
 import numpy as np
 import torch
 import torch.nn.functional as F

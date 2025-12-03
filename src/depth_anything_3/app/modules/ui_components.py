@@ -20,6 +20,7 @@ This module contains UI component definitions and layout functions.
 
 import os
 from typing import Any, Dict, List, Tuple
+
 import gradio as gr
 
 from depth_anything_3.app.modules.utils import get_logo_base64, get_scene_info

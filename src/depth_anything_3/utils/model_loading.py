@@ -17,6 +17,7 @@ Model loading and state dict conversion utilities.
 """
 
 from typing import Dict, Tuple
+
 import torch
 
 from depth_anything_3.utils.logger import logger

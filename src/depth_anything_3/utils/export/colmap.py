@@ -13,10 +13,9 @@
 # limitations under the License.
 
 import os
-import pycolmap
-import cv2 as cv
-import numpy as np
 
+import numpy as np
+import pycolmap
 from PIL import Image
 
 from depth_anything_3.specs import Prediction

@@ -18,6 +18,7 @@ from functools import wraps
 from multiprocessing.pool import ThreadPool
 from threading import Thread
 from typing import Callable, Dict, List
+
 import imageio
 from tqdm import tqdm
 
@@ -32,9 +33,9 @@ def async_call_func(func):
     return wrapper
 
 
-slice_func = lambda chunk_index, chunk_dim, chunk_size: [slice(None)] * chunk_dim + [
-    slice(chunk_index, chunk_index + chunk_size)
-]
+def slice_func(chunk_index, chunk_dim, chunk_size):
+    """Create a slice for accessing a chunk of data along a specific dimension."""
+    return [slice(None)] * chunk_dim + [slice(chunk_index, chunk_index + chunk_size)]
 
 
 def async_call(fn):

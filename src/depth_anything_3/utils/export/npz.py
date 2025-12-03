@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+
 import numpy as np
 
 from depth_anything_3.specs import Prediction

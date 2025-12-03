@@ -23,6 +23,7 @@ import shutil
 import time
 from datetime import datetime
 from typing import List, Optional, Tuple
+
 import cv2
 from PIL import Image
 from pillow_heif import register_heif_opener

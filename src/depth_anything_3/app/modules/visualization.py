@@ -20,6 +20,7 @@ This module handles visualization updates, navigation, and measurement functiona
 
 import os
 from typing import Any, Dict, List, Optional, Tuple
+
 import cv2
 import gradio as gr
 import numpy as np

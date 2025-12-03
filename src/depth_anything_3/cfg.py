@@ -19,6 +19,7 @@ Configuration utility functions
 import importlib
 from pathlib import Path
 from typing import Any, Callable, List, Union
+
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 try:

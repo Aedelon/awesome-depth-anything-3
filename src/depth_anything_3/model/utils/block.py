@@ -14,6 +14,7 @@
 
 
 from typing import Callable
+
 from torch import Tensor, nn
 
 from .attention import Attention, LayerScale, Mlp

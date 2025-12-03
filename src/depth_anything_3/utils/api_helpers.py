@@ -5,12 +5,12 @@ def parse_scalar(s):
     if not isinstance(s, str):
         return s
     t = s.strip()
-    l = t.lower()
-    if l == "true":
+    lower_val = t.lower()
+    if lower_val == "true":
         return True
-    if l == "false":
+    if lower_val == "false":
         return False
-    if l in ("none", "null"):
+    if lower_val in ("none", "null"):
         return None
     try:
         return int(t, 10)

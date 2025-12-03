@@ -22,6 +22,7 @@ The original functionality has been split into modular components for better mai
 import argparse
 import os
 from typing import Any, Dict, List
+
 import gradio as gr
 
 from depth_anything_3.app.css_and_html import GRADIO_CSS, get_gradio_theme

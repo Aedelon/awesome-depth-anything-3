@@ -7,6 +7,7 @@
 # Modified from: https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/vision_transformer.py#L103-L110  # noqa: E501
 
 from typing import Union
+
 import torch
 from torch import Tensor, nn
 

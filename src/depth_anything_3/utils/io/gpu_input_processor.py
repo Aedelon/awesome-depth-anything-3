@@ -10,11 +10,6 @@ Falls back to CPU-based InputProcessor if GPU is unavailable.
 
 from __future__ import annotations
 
-import warnings
-from typing import Sequence
-
-import cv2
-import kornia
 import kornia.geometry.transform as K
 import numpy as np
 import torch
@@ -22,7 +17,6 @@ from PIL import Image
 
 from depth_anything_3.utils.io.input_processor import InputProcessor
 from depth_anything_3.utils.logger import logger
-from depth_anything_3.utils.parallel_utils import parallel_execution
 
 
 class GPUInputProcessor(InputProcessor):
@@ -67,7 +61,7 @@ class GPUInputProcessor(InputProcessor):
             )
         elif self._device.type == "cuda":
             self._use_gpu = True
-            logger.info(f"GPUInputProcessor initialized with device=cuda (NVJPEG enabled)")
+            logger.info("GPUInputProcessor initialized with device=cuda (NVJPEG enabled)")
         else:
             self._use_gpu = False
             logger.warn(
@@ -129,10 +123,10 @@ class GPUInputProcessor(InputProcessor):
         if not self._use_gpu:
             # Fallback to CPU
             return super()._process_one(
-                img, 
-                extrinsic, 
-                intrinsic, 
-                process_res=process_res, 
+                img,
+                extrinsic,
+                intrinsic,
+                process_res=process_res,
                 process_res_method=process_res_method,
                 perform_normalization=perform_normalization
             )
@@ -142,21 +136,22 @@ class GPUInputProcessor(InputProcessor):
 
         # Try GPU/Accelerated decoding if input is a file path and device is CUDA or MPS
         if isinstance(img, str) and self._device.type in ("cuda", "mps"):
-            import torchvision.io
             import os
-            
+
+            import torchvision.io
+
             try:
                 # Read raw bytes from file
                 with open(img, "rb") as f:
                     # Read bytes -> numpy array (uint8) -> torch tensor
                     file_bytes = torch.from_numpy(np.frombuffer(f.read(), dtype=np.uint8))
-                
+
                 ext = os.path.splitext(img)[1].lower()
-                
+
                 # 1. CUDA Optimized Path (NVJPEG)
                 if self._device.type == "cuda" and ext in (".jpg", ".jpeg"):
                     img_tensor = torchvision.io.decode_jpeg(file_bytes, device=self._device)
-                
+
                 # 2. Generic Path (MPS or non-JPG on CUDA)
                 # decode_image is generally faster than PIL for loading into tensors
                 else:
@@ -172,18 +167,18 @@ class GPUInputProcessor(InputProcessor):
                     # Ensure (1, 3, H, W) float32 [0, 1]
                     if img_tensor.dim() == 3:
                         img_tensor = img_tensor.unsqueeze(0) # Add batch dim
-                    
+
                     _, c, h, w = img_tensor.shape
                     orig_h, orig_w = h, w
-                    
+
                     # Handle RGBA or Grayscale
                     if c == 4:
                         img_tensor = img_tensor[:, :3, :, :]
                     elif c == 1:
                         img_tensor = img_tensor.repeat(1, 3, 1, 1)
-                    
+
                     img_tensor = img_tensor.float() / 255.0
-                
+
             except Exception as e:
                 logger.warn(f"Accelerated decoding failed for {img} on {self._device}, falling back to PIL: {e}")
                 img_tensor = None
