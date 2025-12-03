@@ -287,7 +287,7 @@ The Nested series uses an Any-view model to estimate pose and depth, and a monoc
 
 ## ⚡ Performance Benchmarks
 
-Inference throughput measured on Apple Silicon (MPS) with PyTorch 2.9.0. For CUDA benchmarks with GPU preprocessing (NVJPEG) and Flash Attention, see [detailed benchmark results](docs/BENCHMARK_RESULTS.md).
+Inference throughput measured on Apple Silicon (MPS) with PyTorch 2.9.0. For detailed benchmarks, see [BENCHMARKS.md](BENCHMARKS.md).
 
 ### Apple Silicon (MPS) - Batch Size 1
 
@@ -327,7 +327,7 @@ results = model.batch_inference(
 )
 ```
 
-> See [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) for comprehensive benchmarks including preprocessing, attention mechanisms, and adaptive batching strategies.
+> See [BENCHMARKS.md](BENCHMARKS.md) for comprehensive benchmarks including preprocessing, attention mechanisms, and adaptive batching strategies.
 
 
 ## ❓ FAQ
