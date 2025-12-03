@@ -162,12 +162,11 @@ class DepthAnything3App:
         Returns:
             Configured Gradio Blocks interface
         """
+        # Get theme and CSS
+        self._theme = get_gradio_theme()
+        self._css = GRADIO_CSS
 
-        # Initialize theme
-        def get_theme():
-            return get_gradio_theme()
-
-        with gr.Blocks(theme=get_theme(), css=GRADIO_CSS) as demo:
+        with gr.Blocks(theme=self._theme, css=self._css) as demo:
             # State variables for the tabbed interface
             is_example = gr.Textbox(label="is_example", visible=False, value="None")
             processed_data_state = gr.State(value=None)
@@ -223,9 +222,12 @@ class DepthAnything3App:
                                 gs_video, gs_info = self.ui_components.create_nvs_video()
 
                         # Inference control section (before inference)
-                        (process_res_method_dropdown, infer_gs, ref_view_strategy_dropdown) = (
-                            self.ui_components.create_inference_control_section()
-                        )
+                        (
+                            model_selector,
+                            process_res_method_dropdown,
+                            infer_gs,
+                            ref_view_strategy_dropdown,
+                        ) = self.ui_components.create_inference_control_section()
 
                         # Display control section - includes 3DGS options, buttons, and Visualization Options  # noqa: E501
                         (
@@ -294,6 +296,8 @@ class DepthAnything3App:
                 gs_info,
                 gs_trj_mode,
                 gs_video_quality,
+                model_selector,
+                s_time_interval,
             )
 
             # Acknowledgements
@@ -332,11 +336,13 @@ class DepthAnything3App:
         prev_measure_btn: gr.Button,
         next_measure_btn: gr.Button,
         scenes: List[Dict[str, Any]],
-        scene_components: List[gr.Image],
+        scene_components: List,  # List of gr.Image or gr.Video
         gs_video: gr.Video,
         gs_info: gr.Markdown,
         gs_trj_mode: gr.Dropdown,
         gs_video_quality: gr.Dropdown,
+        model_selector: gr.Dropdown,
+        s_time_interval_slider: gr.Slider,
     ) -> None:
         """
         Set up all event handlers for the application.
@@ -360,8 +366,6 @@ class DepthAnything3App:
 
         # Main reconstruction button
         submit_btn.click(
-            fn=self.event_handlers.clear_fields, inputs=[], outputs=[reconstruction_output]
-        ).then(fn=self.event_handlers.update_log, inputs=[], outputs=[log_output]).then(
             fn=self.event_handlers.gradio_demo,
             inputs=[
                 target_dir_output,
@@ -370,12 +374,12 @@ class DepthAnything3App:
                 filter_white_bg,
                 process_res_method_dropdown,
                 save_percentage,
-                # pass num_max_points
                 num_max_points,
                 infer_gs,
                 ref_view_strategy_dropdown,
                 gs_trj_mode,
                 gs_video_quality,
+                model_selector,
             ],
             outputs=[
                 reconstruction_output,
@@ -386,13 +390,8 @@ class DepthAnything3App:
                 measure_text,
                 measure_view_selector,
                 gs_video,
-                gs_video,  # gs_video visibility
-                gs_info,  # gs_info visibility
+                gs_info,
             ],
-        ).then(
-            fn=lambda: "False",
-            inputs=[],
-            outputs=[is_example],  # set is_example to "False"
         )
 
         # Real-time visualization updates
@@ -452,6 +451,7 @@ class DepthAnything3App:
             measure_depth_image,
             gs_video,
             gs_info,
+            s_time_interval,
         )
 
     def _setup_visualization_handlers(
@@ -537,7 +537,7 @@ class DepthAnything3App:
     def _setup_example_scene_handlers(
         self,
         scenes: List[Dict[str, Any]],
-        scene_components: List[gr.Image],
+        scene_components: List,  # List of gr.Image
         reconstruction_output: gr.Model3D,
         target_dir_output: gr.Textbox,
         image_gallery: gr.Gallery,
@@ -549,12 +549,17 @@ class DepthAnything3App:
         measure_depth_image: gr.Image,
         gs_video: gr.Video,
         gs_info: gr.Markdown,
+        s_time_interval: gr.Slider,
     ) -> None:
         """Set up example scene handlers."""
+        # Use assets/examples directory
+        examples_dir = os.environ.get("DA3_EXAMPLES_DIR", "assets/examples")
 
-        def load_and_update_measure(name):
-            result = self.event_handlers.load_example_scene(name)
-            # result = (reconstruction_output, target_dir, image_paths, log_message, processed_data, measure_view_selector, gs_video, gs_video_vis, gs_info_vis)  # noqa: E501
+        def load_and_update_measure(scene_name: str, fps: float):
+            """Load example scene and update measure view."""
+            print(f"[load_and_update_measure] Called with scene_name={scene_name}, fps={fps}", flush=True)
+            result = self.event_handlers.load_example_scene(scene_name, examples_dir, fps)
+            print(f"[load_and_update_measure] target_dir from result[1]: {result[1]}", flush=True)
 
             # Update measure view if processed_data is available
             measure_img = None
@@ -564,27 +569,37 @@ class DepthAnything3App:
                     self.event_handlers.visualization_handler.update_measure_view(result[4], 0)
                 )
 
-            return result + ("True", measure_img, measure_depth)
+            final_result = result + ("True", measure_img, measure_depth)
+            print(f"[load_and_update_measure] Returning {len(final_result)} values", flush=True)
+            return final_result
+
+        def create_scene_handler(scene_name: str):
+            """Create a handler function for a specific scene."""
+            def handler(fps: float):
+                return load_and_update_measure(scene_name, fps)
+            return handler
 
         for i, scene in enumerate(scenes):
             if i < len(scene_components):
-                scene_components[i].select(
-                    fn=lambda name=scene["name"]: load_and_update_measure(name),
-                    outputs=[
-                        reconstruction_output,
-                        target_dir_output,
-                        image_gallery,
-                        log_output,
-                        processed_data_state,
-                        measure_view_selector,
-                        gs_video,
-                        gs_video,  # gs_video_visibility
-                        gs_info,  # gs_info_visibility
-                        is_example,
-                        measure_image,
-                        measure_depth_image,
-                    ],
-                )
+                component = scene_components[i]
+                # Create handler with scene name bound
+                handler_fn = create_scene_handler(scene["name"])
+                outputs = [
+                    reconstruction_output,
+                    target_dir_output,
+                    image_gallery,
+                    log_output,
+                    processed_data_state,
+                    measure_view_selector,
+                    gs_video,
+                    gs_info,
+                    is_example,
+                    measure_image,
+                    measure_depth_image,
+                ]
+
+                # Use click event - s_time_interval value is passed as input
+                component.select(fn=handler_fn, inputs=[s_time_interval], outputs=outputs)
 
     def launch(self, host: str = "127.0.0.1", port: int = 7860, **kwargs) -> None:
         """
@@ -597,7 +612,10 @@ class DepthAnything3App:
         """
         demo = self.create_app()
         demo.queue(max_size=20).launch(
-            show_error=True, ssr_mode=False, server_name=host, server_port=port, **kwargs
+            show_error=True,
+            server_name=host,
+            server_port=port,
+            **kwargs,
         )
 
 

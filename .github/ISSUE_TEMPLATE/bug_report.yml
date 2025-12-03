@@ -1,0 +1,81 @@
+# Copyright (c) Delanoe Pirard / Aedelon
+# Licensed under the Apache License, Version 2.0
+
+name: Bug Report
+description: Report a bug in awesome-depth-anything-3
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill out the form below.
+
+        **Note**: For issues with the model itself (accuracy, artifacts), please report to the [upstream repository](https://github.com/ByteDance-Seed/Depth-Anything-3/issues).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened? What did you expect to happen?
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal code or steps to reproduce the issue
+      placeholder: |
+        ```python
+        from depth_anything_3.api import DepthAnything3
+        model = DepthAnything3.from_pretrained("depth-anything/DA3-LARGE")
+        # ...
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Error Traceback
+      description: Full error message and traceback
+      render: shell
+      placeholder: Paste the full traceback here...
+
+  - type: input
+    id: version
+    attributes:
+      label: Package Version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - CUDA (NVIDIA GPU)
+        - MPS (Apple Silicon)
+        - CPU
+    validations:
+      required: true
+
+  - type: input
+    id: pytorch
+    attributes:
+      label: PyTorch Version
+      placeholder: "2.9.0"
+
+  - type: input
+    id: python
+    attributes:
+      label: Python Version
+      placeholder: "3.11"
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "macOS 14.0 / Ubuntu 22.04 / Windows 11"

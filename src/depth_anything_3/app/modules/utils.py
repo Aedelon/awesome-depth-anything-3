@@ -138,9 +138,46 @@ def save_to_gallery_func(
         return False, f"Save failed: {str(e)}"
 
 
+def _extract_video_thumbnail(video_path: str) -> str:
+    """
+    Extract the first frame of a video as a thumbnail image.
+
+    Args:
+        video_path: Path to the video file
+
+    Returns:
+        Path to the thumbnail image (or video path if extraction fails)
+    """
+    import cv2
+    import tempfile
+
+    try:
+        cap = cv2.VideoCapture(video_path)
+        ret, frame = cap.read()
+        cap.release()
+
+        if ret and frame is not None:
+            # Save thumbnail to temp directory
+            video_name = os.path.splitext(os.path.basename(video_path))[0]
+            thumbnail_dir = os.path.join(tempfile.gettempdir(), "da3_video_thumbnails")
+            os.makedirs(thumbnail_dir, exist_ok=True)
+            thumbnail_path = os.path.join(thumbnail_dir, f"{video_name}_thumb.jpg")
+            cv2.imwrite(thumbnail_path, frame)
+            return thumbnail_path
+    except Exception as e:
+        print(f"Error extracting video thumbnail: {e}")
+
+    # Fallback to video path if extraction fails
+    return video_path
+
+
 def get_scene_info(examples_dir: str) -> List[Dict[str, Any]]:
     """
     Get information about scenes in the examples directory.
+
+    Supports:
+    - Folders containing images (scene folders)
+    - Video files at the root level
 
     Args:
         examples_dir: Path to examples directory
@@ -154,15 +191,16 @@ def get_scene_info(examples_dir: str) -> List[Dict[str, Any]]:
     if not os.path.exists(examples_dir):
         return scenes
 
-    for scene_folder in sorted(os.listdir(examples_dir)):
-        scene_path = os.path.join(examples_dir, scene_folder)
-        if os.path.isdir(scene_path):
+    for item in sorted(os.listdir(examples_dir)):
+        item_path = os.path.join(examples_dir, item)
+
+        if os.path.isdir(item_path):
             # Find all image files in the scene folder
             image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tiff", "*.tif"]
             image_files = []
             for ext in image_extensions:
-                image_files.extend(glob.glob(os.path.join(scene_path, ext)))
-                image_files.extend(glob.glob(os.path.join(scene_path, ext.upper())))
+                image_files.extend(glob.glob(os.path.join(item_path, ext)))
+                image_files.extend(glob.glob(os.path.join(item_path, ext.upper())))
 
             if image_files:
                 # Sort images and get the first one for thumbnail
@@ -172,11 +210,32 @@ def get_scene_info(examples_dir: str) -> List[Dict[str, Any]]:
 
                 scenes.append(
                     {
-                        "name": scene_folder,
-                        "path": scene_path,
+                        "name": item,
+                        "path": item_path,
                         "thumbnail": first_image,
                         "num_images": num_images,
                         "image_files": image_files,
+                        "type": "images",
+                    }
+                )
+
+        elif os.path.isfile(item_path):
+            # Check if it's a video file
+            video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+            ext = os.path.splitext(item)[1].lower()
+            if ext in video_extensions:
+                name = os.path.splitext(item)[0]
+                # Extract first frame as thumbnail
+                thumbnail_path = _extract_video_thumbnail(item_path)
+                scenes.append(
+                    {
+                        "name": name,
+                        "path": item_path,
+                        "thumbnail": thumbnail_path,  # First frame as thumbnail
+                        "num_images": 0,
+                        "image_files": [],
+                        "video_file": item_path,
+                        "type": "video",
                     }
                 )
 

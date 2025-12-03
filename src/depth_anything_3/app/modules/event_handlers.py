@@ -86,17 +86,6 @@ class EventHandlers:
             return "No processed data available. Please run 'Reconstruct' first."
 
         try:
-            # Add debug information
-            print("[DEBUG] save_current_visualization called with:")
-            print(f"  target_dir: {target_dir}")
-            print(f"  save_percentage: {save_percentage}")
-            print(f"  show_cam: {show_cam}")
-            print(f"  filter_black_bg: {filter_black_bg}")
-            print(f"  filter_white_bg: {filter_white_bg}")
-            print(f"  processed_data: {processed_data is not None}")
-
-            # Import the gallery save function
-            # Create gallery name with user input or auto-generated
             import datetime
 
             from .utils import save_to_gallery_func
@@ -107,15 +96,11 @@ class EventHandlers:
             else:
                 gallery_name = f"save_{timestamp}_pct{save_percentage:.0f}"
 
-            print(f"[DEBUG] Saving to gallery with name: {gallery_name}")
-
-            # Save entire process folder to gallery
             success, message = save_to_gallery_func(
                 target_dir=target_dir, processed_data=processed_data, gallery_name=gallery_name
             )
 
             if success:
-                print(f"[DEBUG] Gallery save completed successfully: {message}")
                 return (
                     "Successfully saved to gallery!\n"
                     f"Gallery name: {gallery_name}\n"
@@ -126,7 +111,6 @@ class EventHandlers:
                     f"{message}"
                 )
             else:
-                print(f"[DEBUG] Gallery save failed: {message}")
                 return f"Failed to save to gallery: {message}"
 
         except Exception as e:
@@ -145,18 +129,8 @@ class EventHandlers:
         ref_view_strategy: str = "saddle_balanced",
         gs_trj_mode: str = "extend",
         gs_video_quality: str = "high",
-    ) -> Tuple[
-        Optional[str],
-        str,
-        Optional[Dict],
-        Optional[np.ndarray],
-        Optional[np.ndarray],
-        str,
-        gr.Dropdown,
-        Optional[str],  # gs video path
-        gr.update,  # gs video visibility update
-        gr.update,  # gs info visibility update
-    ]:
+        model_name: str = None,
+    ):
         """
         Perform reconstruction using the already-created target_dir/images.
 
@@ -170,11 +144,20 @@ class EventHandlers:
             num_max_points: Maximum number of points
             infer_gs: Whether to infer 3D Gaussian Splatting
             ref_view_strategy: Reference view selection strategy
+            model_name: Model to use (da3-base, da3-large, da3nested-giant-large)
 
         Returns:
             Tuple of reconstruction results
         """
-        if not os.path.isdir(target_dir) or target_dir == "None":
+        from depth_anything_3.app.modules.model_inference import DEFAULT_MODEL
+
+        if model_name is None:
+            model_name = DEFAULT_MODEL
+
+        print(f"[gradio_demo] Called with target_dir={target_dir}, model={model_name}", flush=True)
+
+        if target_dir is None or not os.path.isdir(target_dir) or target_dir == "None":
+            print("[gradio_demo] Invalid target_dir, returning early")
             return (
                 None,
                 "No valid target directory found. Please upload first.",
@@ -183,8 +166,7 @@ class EventHandlers:
                 None,
                 "",
                 None,
-                None,
-                gr.update(visible=False),  # gs_video
+                gr.update(value=None, visible=False),  # gs_video
                 gr.update(visible=True),  # gs_info
             )
 
@@ -197,20 +179,38 @@ class EventHandlers:
             sorted(os.listdir(target_dir_images)) if os.path.isdir(target_dir_images) else []
         )
 
-        print("Running DepthAnything3 model...")
-        print(f"Reference view strategy: {ref_view_strategy}")
+        print(f"[gradio_demo] Running {model_name} on {len(all_files)} images...")
+        print(f"[gradio_demo] Reference view strategy: {ref_view_strategy}")
 
-        with torch.no_grad():
-            prediction, processed_data = self.model_inference.run_inference(
-                target_dir,
-                process_res_method=process_res_method,
-                show_camera=show_cam,
-                save_percentage=save_percentage,
-                num_max_points=int(num_max_points * 1000),  # Convert K to actual count
-                infer_gs=infer_gs,
-                ref_view_strategy=ref_view_strategy,
-                gs_trj_mode=gs_trj_mode,
-                gs_video_quality=gs_video_quality,
+        try:
+            with torch.no_grad():
+                prediction, processed_data = self.model_inference.run_inference(
+                    target_dir,
+                    process_res_method=process_res_method,
+                    show_camera=show_cam,
+                    save_percentage=save_percentage,
+                    num_max_points=int(num_max_points * 1000),  # Convert K to actual count
+                    infer_gs=infer_gs,
+                    ref_view_strategy=ref_view_strategy,
+                    gs_trj_mode=gs_trj_mode,
+                    gs_video_quality=gs_video_quality,
+                    model_name=model_name,
+                )
+        except Exception as e:
+            error_msg = f"Reconstruction failed: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return (
+                None,
+                error_msg,
+                None,
+                None,
+                None,
+                "",
+                None,
+                gr.update(value=None, visible=False),
+                gr.update(visible=True),
             )
 
         # The GLB file is already generated by the API
@@ -255,8 +255,7 @@ class EventHandlers:
             measure_depth_vis,  # measure_depth_image
             "",  # measure_text (empty initially)
             measure_selector,  # measure_view_selector
-            gsvideo_path,
-            gr.update(visible=gs_video_visible),  # gs_video visibility
+            gr.update(value=gsvideo_path, visible=gs_video_visible),  # gs_video
             gr.update(visible=gs_info_visible),  # gs_info visibility
         )
 
@@ -347,16 +346,17 @@ class EventHandlers:
             input_video, input_images, s_time_interval
         )
 
-    def load_example_scene(self, scene_name: str, examples_dir: str = None) -> Tuple[
+    def load_example_scene(
+        self, scene_name: str, examples_dir: str = None, s_time_interval: float = None
+    ) -> Tuple[
         Optional[str],
         Optional[str],
         Optional[List],
         str,
         Optional[Dict],
-        gr.Dropdown,
-        Optional[str],
-        gr.update,
-        gr.update,
+        gr.Dropdown,  # measure_view_selector
+        dict,  # gs_video update (value + visibility)
+        dict,  # gs_info update (visibility)
     ]:
         """
         Load a scene from examples directory.
@@ -364,6 +364,7 @@ class EventHandlers:
         Args:
             scene_name: Name of the scene to load
             examples_dir: Path to examples directory (if None, uses workspace_dir/examples)
+            s_time_interval: Sampling FPS for video frame extraction (default 1.0)
 
         Returns:
             Tuple of (reconstruction_output, target_dir, image_paths, log_message, processed_data, measure_view_selector, gs_video, gs_video_vis, gs_info_vis)  # noqa: E501
@@ -373,8 +374,12 @@ class EventHandlers:
             workspace_dir = os.environ.get("DA3_WORKSPACE_DIR", "gradio_workspace")
             examples_dir = os.path.join(workspace_dir, "examples")
 
+        # Default FPS for video extraction
+        if s_time_interval is None:
+            s_time_interval = 1.0
+
         reconstruction_output, target_dir, image_paths, log_message = (
-            self.file_handler.load_example_scene(scene_name, examples_dir)
+            self.file_handler.load_example_scene(scene_name, examples_dir, s_time_interval)
         )
 
         # Try to load cached processed data if available
@@ -441,9 +446,8 @@ class EventHandlers:
             log_message,
             processed_data,
             measure_view_selector,
-            gs_video_path,
-            gr.update(visible=gs_video_visible),
-            gr.update(visible=gs_info_visible),
+            gr.update(value=gs_video_path, visible=gs_video_visible),  # gs_video
+            gr.update(visible=gs_info_visible),  # gs_info
         )
 
     def navigate_depth_view(

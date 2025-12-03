@@ -1,7 +1,52 @@
 <div align="center">
-<h1 style="border-bottom: none; margin-bottom: 0px ">Depth Anything 3: Recovering the Visual Space from Any Views</h1>
-<!-- <h2 style="border-top: none; margin-top: 3px;">Recovering the Visual Space from Any Views</h2> -->
 
+# Awesome Depth Anything 3
+
+**Optimized fork of Depth Anything 3 with production-ready features**
+
+[![PyPI](https://img.shields.io/pypi/v/awesome-depth-anything-3)](https://pypi.org/project/awesome-depth-anything-3/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Tests](https://github.com/Aedelon/awesome-depth-anything-3/actions/workflows/ci.yml/badge.svg)](https://github.com/Aedelon/awesome-depth-anything-3/actions)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Aedelon/awesome-depth-anything-3/blob/main/notebooks/da3_tutorial.ipynb)
+[![HF Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Aedelon/awesome-depth-anything-3)
+
+[Demo](https://huggingface.co/spaces/Aedelon/awesome-depth-anything-3) · [Tutorial](notebooks/da3_tutorial.ipynb) · [Benchmarks](BENCHMARKS.md) · [Original Paper](https://arxiv.org/abs/2511.10647)
+
+</div>
+
+---
+
+> **This is an optimized fork** of [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3) by ByteDance.
+> All credit for the model architecture, training, and research goes to the original authors (see [Credits](#-credits) below).
+> This fork focuses on **production optimization, developer experience, and ease of deployment**.
+
+## 🚀 What's New in This Fork
+
+| Feature | Description |
+|---------|-------------|
+| **Model Caching** | ~200x faster model loading after first use |
+| **Adaptive Batching** | Automatic batch size optimization based on GPU memory |
+| **PyPI Package** | `pip install awesome-depth-anything-3` |
+| **CLI Improvements** | Batch processing options, better error handling |
+| **Apple Silicon Optimized** | Smart CPU/GPU preprocessing for best MPS performance |
+| **Comprehensive Benchmarks** | Detailed performance analysis across devices |
+
+### Performance Improvements
+
+| Metric | Upstream | This Fork | Improvement |
+|--------|----------|-----------|-------------|
+| Cached model load | ~1s | ~5ms | **200x faster** |
+| Batch 4 inference (MPS) | 3.32 img/s | 3.78 img/s | **1.14x faster** |
+| Cold model load | 1.28s | 0.77s | **1.7x faster** |
+
+---
+
+<div align="center">
+
+## Original Depth Anything 3
+
+<h3>Recovering the Visual Space from Any Views</h3>
 
 [**Haotong Lin**](https://haotongl.github.io/)<sup>&ast;</sup> · [**Sili Chen**](https://github.com/SiliChen321)<sup>&ast;</sup> · [**Jun Hao Liew**](https://liewjunhao.github.io/)<sup>&ast;</sup> · [**Donny Y. Chen**](https://donydchen.github.io)<sup>&ast;</sup> · [**Zhenyu Li**](https://zhyever.github.io/) · [**Guang Shi**](https://scholar.google.com/citations?user=MjXxWbUAAAAJ&hl=en) · [**Jiashi Feng**](https://scholar.google.com.sg/citations?user=Q8iay0gAAAAJ&hl=en)
 <br>
@@ -11,9 +56,7 @@
 
 <a href="https://arxiv.org/abs/2511.10647"><img src='https://img.shields.io/badge/arXiv-Depth Anything 3-red' alt='Paper PDF'></a>
 <a href='https://depth-anything-3.github.io'><img src='https://img.shields.io/badge/Project_Page-Depth Anything 3-green' alt='Project Page'></a>
-<a href='https://huggingface.co/spaces/depth-anything/Depth-Anything-3'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-blue'></a>
-<!-- <a href='https://huggingface.co/datasets/depth-anything/VGB'><img src='https://img.shields.io/badge/Benchmark-VisGeo-yellow' alt='Benchmark'></a> -->
-<!-- <a href='https://huggingface.co/datasets/depth-anything/data'><img src='https://img.shields.io/badge/Benchmark-xxx-yellow' alt='Data'></a> -->
+<a href='https://huggingface.co/spaces/depth-anything/Depth-Anything-3'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Official Demo-blue'></a>
 
 </div>
 
@@ -84,12 +127,31 @@ We introduce a new benchmark to rigorously evaluate geometry prediction models o
 ### 📦 Installation
 
 ```bash
-pip install xformers torch\>=2 torchvision
-pip install -e . # Basic
-pip install --no-build-isolation git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70 # for gaussian head
-pip install -e ".[app]" # Gradio, python>=3.10
-pip install -e ".[all]" # ALL
+# From PyPI (recommended)
+pip install awesome-depth-anything-3
+
+# With Gradio web UI
+pip install awesome-depth-anything-3[app]
+
+# With CUDA optimizations (xformers + gsplat)
+pip install awesome-depth-anything-3[cuda]
+
+# Everything
+pip install awesome-depth-anything-3[all]
 ```
+
+<details>
+<summary><b>Development installation</b></summary>
+
+```bash
+git clone https://github.com/Aedelon/awesome-depth-anything-3.git
+cd awesome-depth-anything-3
+pip install -e ".[dev]"
+
+# Optional: 3D Gaussian Splatting head
+pip install --no-build-isolation git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf
+```
+</details>
 
 For detailed model information, please refer to the [Model Cards](#-model-cards) section below.
 
@@ -223,6 +285,51 @@ The Nested series uses an Any-view model to estimate pose and depth, and a monoc
 | [DA3MONO-LARGE](https://huggingface.co/depth-anything/DA3MONO-LARGE)                | 0.35B     | ✅             |              |               |               |       | ✅         | Apache 2.0     |
 
 
+## ⚡ Performance Benchmarks
+
+Inference throughput measured on Apple Silicon (MPS) with PyTorch 2.9.0. For CUDA benchmarks with GPU preprocessing (NVJPEG) and Flash Attention, see [detailed benchmark results](docs/BENCHMARK_RESULTS.md).
+
+### Apple Silicon (MPS) - Batch Size 1
+
+| Model | Latency | Throughput |
+|-------|---------|------------|
+| DA3-Small | 46 ms | **22 img/s** |
+| DA3-Base | 93 ms | **11 img/s** |
+| DA3-Large | 265 ms | **3.8 img/s** |
+| DA3-Giant | 618 ms | **1.6 img/s** |
+
+### Cross-Device Comparison (DA3-Large)
+
+| Device | Throughput | vs CPU |
+|--------|------------|--------|
+| CPU | 0.3 img/s | 1.0x |
+| Apple Silicon (MPS) | 3.8 img/s | **13x** |
+| NVIDIA L4 (CUDA) | 10.3 img/s | **34x** |
+
+### Batch Processing
+
+```python
+from depth_anything_3.api import DepthAnything3
+
+model = DepthAnything3.from_pretrained("depth-anything/DA3-LARGE")
+
+# Adaptive batching (recommended for large image sets)
+results = model.batch_inference(
+    images=image_paths,
+    batch_size="auto",  # Automatically selects optimal batch size
+    target_memory_utilization=0.85,
+)
+
+# Fixed batch size
+results = model.batch_inference(
+    images=image_paths,
+    batch_size=4,
+)
+```
+
+> See [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) for comprehensive benchmarks including preprocessing, attention mechanisms, and adaptive batching strategies.
+
+
 ## ❓ FAQ
 
 - **Monocular Metric Depth**: To obtain metric depth in meters from `DA3METRIC-LARGE`, use `metric_depth = focal * net_output / 300.`, where `focal` is the focal length in pixels (typically the average of fx and fy from the camera intrinsic matrix K). Note that the output from `DA3NESTED-GIANT-LARGE` is already in meters.
@@ -257,14 +364,42 @@ A community-curated list of Depth Anything 3 integrations across 3D tools, creat
 - [VideoDepthViewer3D](https://github.com/amariichi/VideoDepthViewer3D): Streaming videos with DA3 metric depth to a Three.js/WebXR 3D viewer for VR/stereo playback.
 
 
-## 📝 Citations
-If you find Depth Anything 3 useful in your research or projects, please cite our work:
+## 📝 Credits
 
-```
+### Original Authors
+
+This package is built on top of **Depth Anything 3**, created by the ByteDance Seed team:
+
+- [Haotong Lin](https://haotongl.github.io/), [Sili Chen](https://github.com/SiliChen321), [Jun Hao Liew](https://liewjunhao.github.io/), [Donny Y. Chen](https://donydchen.github.io), [Zhenyu Li](https://zhyever.github.io/), [Guang Shi](https://scholar.google.com/citations?user=MjXxWbUAAAAJ), [Jiashi Feng](https://scholar.google.com.sg/citations?user=Q8iay0gAAAAJ), [Bingyi Kang](https://bingykang.github.io/)
+
+All model weights, architecture, and core algorithms are their work. This fork only adds production optimizations and deployment tooling.
+
+### Fork Maintainer
+
+This optimized fork is maintained by [Delanoe Pirard (Aedelon)](https://github.com/Aedelon).
+
+Contributions:
+- Model caching system
+- Adaptive batching
+- Apple Silicon (MPS) optimizations
+- PyPI packaging and CI/CD
+- Comprehensive benchmarking
+
+### Citation
+
+If you use Depth Anything 3 in your research, please cite the original paper:
+
+```bibtex
 @article{depthanything3,
   title={Depth Anything 3: Recovering the visual space from any views},
   author={Haotong Lin and Sili Chen and Jun Hao Liew and Donny Y. Chen and Zhenyu Li and Guang Shi and Jiashi Feng and Bingyi Kang},
   journal={arXiv preprint arXiv:2511.10647},
   year={2025}
 }
+```
+
+If you specifically use features from this fork (caching, batching, MPS optimizations), you may additionally reference:
+
+```
+awesome-depth-anything-3: https://github.com/Aedelon/awesome-depth-anything-3
 ```

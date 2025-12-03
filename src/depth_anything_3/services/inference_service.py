@@ -18,6 +18,7 @@ Provides unified interface for local and remote inference
 """
 
 from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import requests
 import typer
@@ -57,14 +58,64 @@ class InferenceService:
         num_max_points: int = 1_000_000,
         show_cameras: bool = True,
         feat_vis_fps: int = 15,
+        batch_size: Union[int, str] = "all",
+        max_batch_size: int = 64,
+        target_memory_utilization: float = 0.85,
     ) -> Any:
-        """Run local inference"""
+        """Run local inference.
+
+        Args:
+            batch_size: Batch size for processing:
+                - "all": Process all images in one batch (original behavior)
+                - "auto": Adaptive batching based on available GPU memory
+                - int: Fixed batch size (e.g., 4, 8, 16)
+            max_batch_size: Maximum batch size when using adaptive batching
+            target_memory_utilization: Target GPU memory usage (0.0-1.0) for adaptive batching
+        """
         if export_feat_layers is None:
             export_feat_layers = []
 
         model = self.load_model()
 
-        # Prepare inference parameters
+        typer.echo(f"Running inference on {len(image_paths)} images...")
+
+        # Use batch_inference for adaptive or fixed batching
+        if batch_size != "all":
+            typer.echo(f"Batch mode: {batch_size}" + (f" (max: {max_batch_size})" if batch_size == "auto" else ""))
+
+            def progress_callback(processed: int, total: int):
+                typer.echo(f"  Progress: {processed}/{total} images")
+
+            predictions = model.batch_inference(
+                images=image_paths,
+                process_res=process_res,
+                batch_size=batch_size,
+                max_batch_size=max_batch_size,
+                target_memory_utilization=target_memory_utilization,
+                progress_callback=progress_callback,
+            )
+
+            # For batch inference, we need to merge results and export
+            # The first prediction contains all depth maps if we need to export
+            if export_dir and predictions:
+                # Merge all predictions into one for export
+                merged = self._merge_predictions(predictions)
+                from depth_anything_3.utils.export import export
+                export(
+                    merged,
+                    export_dir,
+                    export_format,
+                    conf_thresh_percentile=conf_thresh_percentile,
+                    num_max_points=num_max_points,
+                    show_cameras=show_cameras,
+                    feat_vis_fps=feat_vis_fps,
+                )
+                typer.echo(f"Results saved to {export_dir}")
+                typer.echo(f"Export format: {export_format}")
+
+            return predictions
+
+        # Original behavior: process all images in one batch
         inference_kwargs = {
             "image": image_paths,
             "export_dir": export_dir,
@@ -87,14 +138,55 @@ class InferenceService:
         if intrinsics is not None:
             inference_kwargs["intrinsics"] = intrinsics
 
-        # Run inference
-        typer.echo(f"Running inference on {len(image_paths)} images...")
         prediction = model.inference(**inference_kwargs)
 
         typer.echo(f"Results saved to {export_dir}")
         typer.echo(f"Export format: {export_format}")
 
         return prediction
+
+    def _merge_predictions(self, predictions: List[Any]) -> Any:
+        """Merge multiple batch predictions into one."""
+        if not predictions:
+            return None
+        if len(predictions) == 1:
+            return predictions[0]
+
+        # Merge depth maps and other fields
+        merged_depths = []
+        merged_confs = []
+        merged_image_paths = []
+
+        for pred in predictions:
+            if hasattr(pred, 'depth') and pred.depth is not None:
+                # Handle batched depth maps
+                if pred.depth.dim() == 4:  # (B, 1, H, W)
+                    for i in range(pred.depth.shape[0]):
+                        merged_depths.append(pred.depth[i])
+                else:
+                    merged_depths.append(pred.depth)
+
+            if hasattr(pred, 'confidence') and pred.confidence is not None:
+                if pred.confidence.dim() == 4:
+                    for i in range(pred.confidence.shape[0]):
+                        merged_confs.append(pred.confidence[i])
+                else:
+                    merged_confs.append(pred.confidence)
+
+            if hasattr(pred, 'image_paths') and pred.image_paths:
+                merged_image_paths.extend(pred.image_paths)
+
+        # Use first prediction as base and update fields
+        import torch
+        merged = predictions[0]
+        if merged_depths:
+            merged.depth = torch.stack(merged_depths)
+        if merged_confs:
+            merged.confidence = torch.stack(merged_confs)
+        if merged_image_paths:
+            merged.image_paths = merged_image_paths
+
+        return merged
 
     def run_backend_inference(
         self,
@@ -195,8 +287,20 @@ def run_inference(
     num_max_points: int = 1_000_000,
     show_cameras: bool = True,
     feat_vis_fps: int = 15,
+    batch_size: Union[int, str] = "all",
+    max_batch_size: int = 64,
+    target_memory_utilization: float = 0.85,
 ) -> Union[Any, Dict[str, Any]]:
-    """Unified inference interface"""
+    """Unified inference interface.
+
+    Args:
+        batch_size: Batch size for processing:
+            - "all": Process all images in one batch (default, original behavior)
+            - "auto": Adaptive batching based on available GPU memory
+            - int: Fixed batch size (e.g., 4, 8, 16)
+        max_batch_size: Maximum batch size when using adaptive batching (default: 64)
+        target_memory_utilization: Target GPU memory usage (0.0-1.0) for adaptive batching
+    """
 
     service = InferenceService(model_dir, device)
 
@@ -236,4 +340,7 @@ def run_inference(
             num_max_points=num_max_points,
             show_cameras=show_cameras,
             feat_vis_fps=feat_vis_fps,
+            batch_size=batch_size,
+            max_batch_size=max_batch_size,
+            target_memory_utilization=target_memory_utilization,
         )

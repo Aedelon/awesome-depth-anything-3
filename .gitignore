@@ -1,19 +1,43 @@
 # Python cache
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 
 # Distribution / packaging
 workspace/
 build/
 dist/
 *.egg-info/
-.gradio/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
 
 # Test/coverage
 .coverage
 .pytest_cache/
 htmlcov/
 .tox/
+.nox/
+coverage.xml
+*.cover
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project-specific
 gallery*/
 debug*/
 DA3HF*/
@@ -22,15 +46,18 @@ eval_workspace/
 FILTER*/
 input_images*/
 *.gradio/
-
-# Jupyter notebooks
-.ipynb_checkpoints
-
-# OS files
-.DS_Store
-
-.vscode
+.gradio/
 src/debug_main.py
 temp*.png
 /outputs
-.idea
+
+# Model weights and large files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+!assets/**/*.pt
+
+# Logs
+*.log
+logs/

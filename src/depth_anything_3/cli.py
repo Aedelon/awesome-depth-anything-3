@@ -132,6 +132,17 @@ def auto(
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
     ),
+    # Batching options
+    batch_size: str = typer.Option(
+        "all",
+        help="Batch size: 'all' (single batch), 'auto' (adaptive GPU memory), or integer (fixed size)",
+    ),
+    max_batch_size: int = typer.Option(
+        64, help="[Batching] Maximum batch size for adaptive batching"
+    ),
+    target_memory_utilization: float = typer.Option(
+        0.85, help="[Batching] Target GPU memory usage (0.0-1.0) for adaptive batching"
+    ),
     # Video-specific options
     fps: float = typer.Option(1.0, help="[Video] Sampling FPS for frame extraction"),
     # COLMAP-specific options
@@ -194,6 +205,15 @@ def auto(
     # Parse export_feat parameter
     export_feat_layers = parse_export_feat(export_feat)
 
+    # Parse batch_size: convert to int if numeric, otherwise keep as string ("all" or "auto")
+    parsed_batch_size: int | str = batch_size
+    if batch_size not in ("all", "auto"):
+        try:
+            parsed_batch_size = int(batch_size)
+        except ValueError:
+            typer.echo(f"Invalid batch_size: {batch_size}. Use 'all', 'auto', or an integer.", err=True)
+            raise typer.Exit(1)
+
     # Route to appropriate handler
     if input_type == "image":
         typer.echo("Processing single image...")
@@ -220,6 +240,9 @@ def auto(
             num_max_points=num_max_points,
             show_cameras=show_cameras,
             feat_vis_fps=feat_vis_fps,
+            batch_size=parsed_batch_size,
+            max_batch_size=max_batch_size,
+            target_memory_utilization=target_memory_utilization,
         )
 
     elif input_type == "images":
@@ -247,6 +270,9 @@ def auto(
             num_max_points=num_max_points,
             show_cameras=show_cameras,
             feat_vis_fps=feat_vis_fps,
+            batch_size=parsed_batch_size,
+            max_batch_size=max_batch_size,
+            target_memory_utilization=target_memory_utilization,
         )
 
     elif input_type == "video":
@@ -274,6 +300,9 @@ def auto(
             num_max_points=num_max_points,
             show_cameras=show_cameras,
             feat_vis_fps=feat_vis_fps,
+            batch_size=parsed_batch_size,
+            max_batch_size=max_batch_size,
+            target_memory_utilization=target_memory_utilization,
         )
 
     elif input_type == "colmap":
@@ -306,6 +335,9 @@ def auto(
             num_max_points=num_max_points,
             show_cameras=show_cameras,
             feat_vis_fps=feat_vis_fps,
+            batch_size=parsed_batch_size,
+            max_batch_size=max_batch_size,
+            target_memory_utilization=target_memory_utilization,
         )
 
     typer.echo()
@@ -380,7 +412,7 @@ def image(
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
         use_ray_pose=use_ray_pose,
-        reference_view_strategy=reference_view_strategy,
+        ref_view_strategy=ref_view_strategy,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
@@ -412,6 +444,17 @@ def images(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Batching options
+    batch_size: str = typer.Option(
+        "all",
+        help="Batch size: 'all' (single batch), 'auto' (adaptive GPU memory), or integer (fixed size)",
+    ),
+    max_batch_size: int = typer.Option(
+        64, help="[Batching] Maximum batch size for adaptive batching"
+    ),
+    target_memory_utilization: float = typer.Option(
+        0.85, help="[Batching] Target GPU memory usage (0.0-1.0) for adaptive batching"
     ),
     # Pose estimation options
     use_ray_pose: bool = typer.Option(
@@ -447,6 +490,15 @@ def images(
     # Determine backend URL based on use_backend flag
     final_backend_url = backend_url if use_backend else None
 
+    # Parse batch_size
+    parsed_batch_size: int | str = batch_size
+    if batch_size not in ("all", "auto"):
+        try:
+            parsed_batch_size = int(batch_size)
+        except ValueError:
+            typer.echo(f"Invalid batch_size: {batch_size}. Use 'all', 'auto', or an integer.", err=True)
+            raise typer.Exit(1)
+
     # Run inference
     run_inference(
         image_paths=image_files,
@@ -459,11 +511,14 @@ def images(
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
         use_ray_pose=use_ray_pose,
-        reference_view_strategy=reference_view_strategy,
+        ref_view_strategy=ref_view_strategy,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        batch_size=parsed_batch_size,
+        max_batch_size=max_batch_size,
+        target_memory_utilization=target_memory_utilization,
     )
 
 
@@ -496,6 +551,17 @@ def colmap(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Batching options
+    batch_size: str = typer.Option(
+        "all",
+        help="Batch size: 'all' (single batch), 'auto' (adaptive GPU memory), or integer (fixed size)",
+    ),
+    max_batch_size: int = typer.Option(
+        64, help="[Batching] Maximum batch size for adaptive batching"
+    ),
+    target_memory_utilization: float = typer.Option(
+        0.85, help="[Batching] Target GPU memory usage (0.0-1.0) for adaptive batching"
     ),
     # Pose estimation options
     use_ray_pose: bool = typer.Option(
@@ -531,6 +597,15 @@ def colmap(
     # Determine backend URL based on use_backend flag
     final_backend_url = backend_url if use_backend else None
 
+    # Parse batch_size
+    parsed_batch_size: int | str = batch_size
+    if batch_size not in ("all", "auto"):
+        try:
+            parsed_batch_size = int(batch_size)
+        except ValueError:
+            typer.echo(f"Invalid batch_size: {batch_size}. Use 'all', 'auto', or an integer.", err=True)
+            raise typer.Exit(1)
+
     # Run inference
     run_inference(
         image_paths=image_files,
@@ -546,11 +621,14 @@ def colmap(
         intrinsics=intrinsics,
         align_to_input_ext_scale=align_to_input_ext_scale,
         use_ray_pose=use_ray_pose,
-        reference_view_strategy=reference_view_strategy,
+        ref_view_strategy=ref_view_strategy,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        batch_size=parsed_batch_size,
+        max_batch_size=max_batch_size,
+        target_memory_utilization=target_memory_utilization,
     )
 
 
@@ -576,6 +654,17 @@ def video(
     ),
     auto_cleanup: bool = typer.Option(
         False, help="Automatically clean export directory if it exists (no prompt)"
+    ),
+    # Batching options
+    batch_size: str = typer.Option(
+        "all",
+        help="Batch size: 'all' (single batch), 'auto' (adaptive GPU memory), or integer (fixed size)",
+    ),
+    max_batch_size: int = typer.Option(
+        64, help="[Batching] Maximum batch size for adaptive batching"
+    ),
+    target_memory_utilization: float = typer.Option(
+        0.85, help="[Batching] Target GPU memory usage (0.0-1.0) for adaptive batching"
     ),
     # Pose estimation options
     use_ray_pose: bool = typer.Option(
@@ -611,6 +700,15 @@ def video(
     # Determine backend URL based on use_backend flag
     final_backend_url = backend_url if use_backend else None
 
+    # Parse batch_size
+    parsed_batch_size: int | str = batch_size
+    if batch_size not in ("all", "auto"):
+        try:
+            parsed_batch_size = int(batch_size)
+        except ValueError:
+            typer.echo(f"Invalid batch_size: {batch_size}. Use 'all', 'auto', or an integer.", err=True)
+            raise typer.Exit(1)
+
     # Run inference
     run_inference(
         image_paths=image_files,
@@ -623,11 +721,14 @@ def video(
         process_res_method=process_res_method,
         export_feat_layers=export_feat_layers,
         use_ray_pose=use_ray_pose,
-        reference_view_strategy=reference_view_strategy,
+        ref_view_strategy=ref_view_strategy,
         conf_thresh_percentile=conf_thresh_percentile,
         num_max_points=num_max_points,
         show_cameras=show_cameras,
         feat_vis_fps=feat_vis_fps,
+        batch_size=parsed_batch_size,
+        max_batch_size=max_batch_size,
+        target_memory_utilization=target_memory_utilization,
     )
 
 
