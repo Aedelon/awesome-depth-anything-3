@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Upstream Repository
+    url: https://github.com/ByteDance-Seed/Depth-Anything-3/issues
+    about: For issues with the model architecture, accuracy, or training
+  - name: Discussions
+    url: https://github.com/Aedelon/awesome-depth-anything-3/discussions
+    about: Ask questions or share ideas

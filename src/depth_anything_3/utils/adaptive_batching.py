@@ -254,7 +254,7 @@ class AdaptiveBatchSizeCalculator:
         usable_mb -= self.profile.base_memory_mb
 
         if usable_mb <= 0:
-            logger.warning(
+            logger.warn(
                 f"Insufficient memory for model. "
                 f"Available: {available_mb:.0f} MB, "
                 f"Model base: {self.profile.base_memory_mb:.0f} MB"

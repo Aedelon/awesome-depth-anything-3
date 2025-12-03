@@ -1,0 +1,61 @@
+# Copyright (c) Delanoe Pirard / Aedelon
+# Licensed under the Apache License, Version 2.0
+
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your suggestion!
+
+        **Note**: For model/architecture changes, please suggest to the [upstream repository](https://github.com/ByteDance-Seed/Depth-Anything-3/issues).
+        This fork focuses on optimization, deployment, and developer experience.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use Case
+      description: What problem does this solve? What are you trying to do?
+      placeholder: I'm trying to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like it to work?
+      placeholder: It would be great if...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any other approaches you've considered?
+      placeholder: I also thought about...
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Performance optimization
+        - CLI improvement
+        - API enhancement
+        - Documentation
+        - Testing
+        - CI/CD
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to submit a PR for this feature

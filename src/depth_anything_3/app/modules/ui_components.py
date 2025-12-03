@@ -55,9 +55,8 @@ class UIComponents:
             label="Preview",
             columns=4,
             height="300px",
-            show_download_button=True,
             object_fit="contain",
-            preview=True,
+            allow_preview=True,
             interactive=False,
         )
 
@@ -195,14 +194,26 @@ class UIComponents:
             measure_text,
         )
 
-    def create_inference_control_section(self) -> Tuple[gr.Dropdown, gr.Checkbox, gr.Dropdown]:
+    def create_inference_control_section(
+        self,
+    ) -> Tuple[gr.Dropdown, gr.Dropdown, gr.Checkbox, gr.Dropdown]:
         """
         Create the inference control section (before inference).
 
         Returns:
-            Tuple of (process_res_method_dropdown, infer_gs, ref_view_strategy)
+            Tuple of (model_selector, process_res_method_dropdown, infer_gs, ref_view_strategy)
         """
+        from depth_anything_3.app.modules.model_inference import AVAILABLE_MODELS, DEFAULT_MODEL
+
         with gr.Row():
+            # Model selector - most important control
+            model_selector = gr.Dropdown(
+                choices=list(AVAILABLE_MODELS.keys()),
+                value=DEFAULT_MODEL,
+                label="Model",
+                info="da3-base: fast | da3-large: balanced | giant: best quality",
+                scale=1,
+            )
             process_res_method_dropdown = gr.Dropdown(
                 choices=["high_res", "low_res"],
                 value="low_res",
@@ -210,7 +221,6 @@ class UIComponents:
                 info="low_res for much more images",
                 scale=1,
             )
-            # Modify line 220, add color class
             infer_gs = gr.Checkbox(
                 label="Infer 3D Gaussian Splatting",
                 value=False,
@@ -228,7 +238,7 @@ class UIComponents:
                 scale=1,
             )
 
-        return (process_res_method_dropdown, infer_gs, ref_view_strategy)
+        return (model_selector, process_res_method_dropdown, infer_gs, ref_view_strategy)
 
     def create_display_control_section(
         self,
@@ -391,16 +401,15 @@ class UIComponents:
         Returns:
             List of scene information dictionaries
         """
-        # Get workspace directory from environment variable
-        workspace_dir = os.environ.get("DA3_WORKSPACE_DIR", "gradio_workspace")
-        examples_dir = os.path.join(workspace_dir, "examples")
+        # Use assets/examples directory for example scenes
+        examples_dir = os.environ.get("DA3_EXAMPLES_DIR", "assets/examples")
 
         # Get scene information
         scenes = get_scene_info(examples_dir)
 
         return scenes
 
-    def create_example_scene_grid(self, scenes: List[Dict[str, Any]]) -> List[gr.Image]:
+    def create_example_scene_grid(self, scenes: List[Dict[str, Any]]) -> List:
         """
         Create the example scene grid.
 
@@ -408,7 +417,7 @@ class UIComponents:
             scenes: List of scene information dictionaries
 
         Returns:
-            List of scene image components
+            List of scene components (gr.Image or gr.Video) in same order as scenes
         """
         scene_components = []
 
@@ -419,9 +428,12 @@ class UIComponents:
                         scene_idx = i + j
                         if scene_idx < len(scenes):
                             scene = scenes[scene_idx]
+                            scene_type = scene.get("type", "images")
+
                             with gr.Column(scale=1, elem_classes=["clickable-thumbnail"]):
-                                # Clickable thumbnail
-                                scene_img = gr.Image(
+                                # Use Image for both image and video scenes
+                                # (video scenes use first frame as thumbnail)
+                                scene_component = gr.Image(
                                     value=scene["thumbnail"],
                                     height=150,
                                     interactive=False,
@@ -429,13 +441,20 @@ class UIComponents:
                                     elem_id=f"scene_thumb_{scene['name']}",
                                     sources=[],
                                 )
-                                scene_components.append(scene_img)
+                                scene_components.append(scene_component)
 
-                                # Scene name and image count as text below thumbnail
-                                gr.Markdown(
-                                    f"**{scene['name']}** \n {scene['num_images']} images",
-                                    elem_classes=["scene-info"],
-                                )
+                                if scene_type == "video":
+                                    # Scene name for video
+                                    gr.Markdown(
+                                        f"**{scene['name']}** \n 🎬 video",
+                                        elem_classes=["scene-info"],
+                                    )
+                                else:
+                                    # Scene name and image count
+                                    gr.Markdown(
+                                        f"**{scene['name']}** \n {scene['num_images']} images",
+                                        elem_classes=["scene-info"],
+                                    )
                         else:
                             # Empty column to maintain grid structure
                             with gr.Column(scale=1):

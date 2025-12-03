@@ -221,7 +221,7 @@ class FileHandler:
         )
 
     def load_example_scene(
-        self, scene_name: str, examples_dir: str = "examples"
+        self, scene_name: str, examples_dir: str = "examples", s_time_interval: float = 1.0
     ) -> Tuple[Optional[str], Optional[str], Optional[List], str]:
         """
         Load a scene from examples directory.
@@ -229,6 +229,7 @@ class FileHandler:
         Args:
             scene_name: Name of the scene to load
             examples_dir: Path to examples directory
+            s_time_interval: Sampling FPS for video frame extraction (default 1.0)
 
         Returns:
             Tuple of (reconstruction_output, target_dir, image_paths, log_message)
@@ -247,14 +248,22 @@ class FileHandler:
         if selected_scene is None:
             return None, None, None, "Scene not found"
 
+        # Check if this is a video scene
+        is_video_scene = selected_scene.get("type") == "video"
+
         # Use fixed directory name for examples (not timestamp-based)
         workspace_dir = os.environ.get("DA3_WORKSPACE_DIR", "gradio_workspace")
         input_images_dir = os.path.join(workspace_dir, "input_images")
         if not os.path.exists(input_images_dir):
             os.makedirs(input_images_dir)
 
-        # Create a fixed folder name based on scene name
-        target_dir = os.path.join(input_images_dir, f"example_{scene_name}")
+        # For video scenes, include FPS in folder name so different FPS = different cache
+        if is_video_scene:
+            target_dir = os.path.join(
+                input_images_dir, f"example_{scene_name}_fps{s_time_interval:.1f}"
+            )
+        else:
+            target_dir = os.path.join(input_images_dir, f"example_{scene_name}")
         target_dir_images = os.path.join(target_dir, "images")
 
         # Check if already cached (GLB file exists)
@@ -266,14 +275,24 @@ class FileHandler:
             os.makedirs(target_dir)
             os.makedirs(target_dir_images)
 
-        # Copy images if directory is new or empty
+        # Process images or extract video frames if directory is new or empty
         if not os.path.exists(target_dir_images) or len(os.listdir(target_dir_images)) == 0:
             os.makedirs(target_dir_images, exist_ok=True)
             image_paths = []
-            for file_path in selected_scene["image_files"]:
-                dst_path = os.path.join(target_dir_images, os.path.basename(file_path))
-                shutil.copy(file_path, dst_path)
-                image_paths.append(dst_path)
+
+            if is_video_scene:
+                # Extract frames from video using specified FPS
+                video_path = selected_scene.get("video_file")
+                if video_path:
+                    image_paths = self._process_video(
+                        video_path, target_dir_images, s_time_interval
+                    )
+            else:
+                # Copy images
+                for file_path in selected_scene["image_files"]:
+                    dst_path = os.path.join(target_dir_images, os.path.basename(file_path))
+                    shutil.copy(file_path, dst_path)
+                    image_paths.append(dst_path)
         else:
             # Use existing images
             image_paths = sorted(
@@ -284,13 +303,16 @@ class FileHandler:
                 ]
             )
 
+        num_frames = len(image_paths)
+        scene_type = "video" if is_video_scene else "scene"
+
         # Return cached GLB if available
         if is_cached:
             return (
                 glb_path,  # Return cached reconstruction
                 target_dir,  # Set target directory
                 image_paths,  # Set gallery
-                f"Loaded cached scene '{scene_name}' with {selected_scene['num_images']} images.",
+                f"Loaded cached {scene_type} '{scene_name}' with {num_frames} frames.",
             )
         else:
             return (
@@ -298,7 +320,7 @@ class FileHandler:
                 target_dir,  # Set target directory
                 image_paths,  # Set gallery
                 (
-                    f"Loaded scene '{scene_name}' with {selected_scene['num_images']} images. "
+                    f"Loaded {scene_type} '{scene_name}' with {num_frames} frames. "
                     "Click 'Reconstruct' to begin 3D processing."
                 ),
             )

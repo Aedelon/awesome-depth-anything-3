@@ -143,8 +143,9 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             return torch.device("cpu")
 
     def _create_model(self) -> nn.Module:
-        """Create and return new model instance."""
+        """Create and return new model instance on correct device."""
         model = create_object(self.config)
+        model = model.to(self.device)  # Move to device before caching
         model.eval()
         return model
 
@@ -174,13 +175,19 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         Returns:
             Dictionary containing model predictions
         """
-        # Determine optimal autocast dtype
-        autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         with torch.no_grad():
-            with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+            # MPS doesn't support autocast well - use float32 for stability
+            if image.device.type == "mps":
                 return self.model(
                     image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
                 )
+            else:
+                # CUDA: use autocast for performance
+                autocast_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+                with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
+                    return self.model(
+                        image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+                    )
 
     def inference(
         self,
